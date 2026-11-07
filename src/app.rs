@@ -98,7 +98,7 @@ impl App {
         let (tx, rx) = mpsc::channel();
         let n = tools.len();
         let mut output = vec![
-            ":: nasrya ready. tools above; output appears here.".into(),
+            ":: winsploit ready. tools above; output appears here.".into(),
             ":: Enter runs the highlighted tool · i installs it (scoop or pipx).".into(),
             format!(":: catalog: {}", catalog_path.display()),
         ];
@@ -173,7 +173,7 @@ impl App {
 
     /// Re-probe every tool on a background thread; the result comes back as
     /// `AppEvent::Detected`, so the UI keeps drawing meanwhile. With
-    /// `refresh_path`, first pick up PATH changes persisted since nasrya
+    /// `refresh_path`, first pick up PATH changes persisted since winsploit
     /// started (installs that add a PATH entry, a freshly installed Scoop).
     fn detect_all(&mut self, refresh_path: bool) {
         if self.detecting {

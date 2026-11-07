@@ -8,7 +8,7 @@
 //!
 //! Two deliberate differences from `where`:
 //! - the current directory is never searched, so a stray `nmap.exe` in the
-//!   folder you started nasrya from can't pose as the real tool;
+//!   folder you started winsploit from can't pose as the real tool;
 //! - only extensions we can actually launch count (`.exe .com .bat .cmd`), so
 //!   Scoop's extensionless sh shims and `.ps1` shims don't produce a false
 //!   "installed".

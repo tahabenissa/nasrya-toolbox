@@ -1,9 +1,9 @@
-//! Sanity checks for the Scoop manifests nasrya ships in `bucket/`.
+//! Sanity checks for the Scoop manifests winsploit ships in `bucket/`.
 //!
 //! The bucket is added by Scoop straight from this repo, so a broken
 //! manifest would only surface on a user's machine. These tests catch the
 //! usual mistakes (bad JSON, missing/short hash, URL without a hash, no
-//! bin), and that every catalog entry using the nasrya bucket points at a
+//! bin), and that every catalog entry using the winsploit bucket points at a
 //! manifest that exists.
 
 use std::collections::BTreeMap;
@@ -96,19 +96,19 @@ fn manifests_are_well_formed() {
 }
 
 #[test]
-fn catalog_entries_in_the_nasrya_bucket_have_manifests() {
+fn catalog_entries_in_the_winsploit_bucket_have_manifests() {
     let cat = crate::registry::parse(include_str!("../tools.yaml")).unwrap();
     let all = manifests();
     for t in cat
         .tools
         .iter()
-        .filter(|t| t.bucket.as_deref() == Some("nasrya"))
+        .filter(|t| t.bucket.as_deref() == Some("winsploit"))
     {
         let pkg = t.scoop.as_deref().unwrap();
         assert!(all.contains_key(pkg), "{}: no bucket/{pkg}.json", t.name);
     }
     assert!(
-        cat.buckets.contains_key("nasrya"),
-        "tools.yaml `buckets:` needs a URL for the nasrya bucket"
+        cat.buckets.contains_key("winsploit"),
+        "tools.yaml `buckets:` needs a URL for the winsploit bucket"
     );
 }

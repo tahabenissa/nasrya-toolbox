@@ -1,6 +1,6 @@
 //! Per-run log files: every tool run and install is written to
-//! `%LOCALAPPDATA%\nasrya\logs\<UTC timestamp>-<name>.log`, so output
-//! survives the 2000-line in-memory buffer and nasrya itself (evidence for a
+//! `%LOCALAPPDATA%\winsploit\logs\<UTC timestamp>-<name>.log`, so output
+//! survives the 2000-line in-memory buffer and winsploit itself (evidence for a
 //! report, or just "what did that scan say yesterday").
 
 use std::fs::File;
@@ -8,12 +8,12 @@ use std::io::{LineWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Where logs go: `%LOCALAPPDATA%\nasrya\logs` (or the temp dir).
+/// Where logs go: `%LOCALAPPDATA%\winsploit\logs` (or the temp dir).
 pub fn log_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
-        .join("nasrya")
+        .join("winsploit")
         .join("logs")
 }
 
@@ -31,7 +31,7 @@ impl RunLog {
         let now = unix_now();
         let path = dir.join(format!("{}-{}.log", stamp_compact(now), sanitize(name)));
         let mut file = LineWriter::new(File::create(&path)?);
-        writeln!(file, "# nasrya run log")?;
+        writeln!(file, "# winsploit run log")?;
         writeln!(file, "# tool:    {name}")?;
         writeln!(file, "# command: {command}")?;
         writeln!(file, "# started: {}", stamp_iso(now))?;
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn writes_header_lines_and_footer() {
-        let dir = std::env::temp_dir().join(format!("nasrya-log-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("winsploit-log-test-{}", std::process::id()));
         let mut log = RunLog::create(&dir, "nmap", "nmap -sV x").unwrap();
         let path = log.path().to_path_buf();
         log.line("PORT STATE");

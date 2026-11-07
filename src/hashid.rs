@@ -243,7 +243,7 @@ pub fn report(hash: &str) -> Vec<String> {
     let found = identify(hash);
     if found.is_empty() {
         return vec![format!(
-            "no match for {:?} — not a hash format nasrya knows",
+            "no match for {:?} — not a hash format winsploit knows",
             hash.trim()
         )];
     }

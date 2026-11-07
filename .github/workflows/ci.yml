@@ -39,5 +39,5 @@ jobs:
 
       - name: Smoke test (--version / list)
         run: |
-          ./target/release/nasrya.exe --version
-          ./target/release/nasrya.exe list
+          ./target/release/winsploit.exe --version
+          ./target/release/winsploit.exe list

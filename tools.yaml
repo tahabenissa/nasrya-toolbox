@@ -1,4 +1,4 @@
-# nasrya — tool registry
+# winsploit — tool registry
 # Add a tool by adding an entry here; no code changes needed.
 #
 # Fields:
@@ -9,9 +9,9 @@
 #   install     (optional) scoop (default) | pipx
 #   scoop       scoop package name                       (install: scoop)
 #   bucket      (optional) scoop bucket the package lives in; main-bucket tools omit this.
-#               If the bucket isn't added yet, nasrya adds it before installing.
+#               If the bucket isn't added yet, winsploit adds it before installing.
 #   pipx        pipx package spec: `arjun`, `pkg==1.2`, or `git+https://github.com/o/r`
-#               (install: pipx). nasrya bootstraps Python + pipx through Scoop if needed.
+#               (install: pipx). winsploit bootstraps Python + pipx through Scoop if needed.
 #   run_cmd     the command actually launched (may be empty for a URL-only web tool)
 #   args_hint   arguments prefilled when you press Enter (edit before running)
 #   launch      (optional) stream (default: output in the pane) | gui (desktop app,
@@ -43,8 +43,8 @@
 
 buckets:
   security: https://github.com/opsqw/scoop-security   # formerly whoopscs/scoop-security
-  # nasrya's own manifests (bucket/ in this repo) for tools no other bucket packages
-  nasrya: https://github.com/tahabenissa/nasrya-toolbox
+  # winsploit's own manifests (bucket/ in this repo) for tools no other bucket packages
+  winsploit: https://github.com/tahabenissa/nasrya-toolbox
 
 tools:
   - name: nmap
@@ -416,7 +416,7 @@ tools:
     description: Fetch known URLs from web archives (getallurls)
     exe: gau
     scoop: gau
-    bucket: nasrya
+    bucket: winsploit
     run_cmd: gau
     args_hint: "--subs example.com"
 
@@ -425,7 +425,7 @@ tools:
     description: John the Ripper (jumbo) hash cracker
     exe: john
     scoop: john-jumbo
-    bucket: nasrya
+    bucket: winsploit
     run_cmd: john
     args_hint: '--wordlist="{app:seclists-lite}\xato-net-10-million-passwords-10000.txt" hashes.txt'
     note: official Openwall Windows build (1.9.0-jumbo-1, 2019); zip2john, rar2john, keepass2john etc. are on PATH too
@@ -435,7 +435,7 @@ tools:
     description: Hide / extract data in images and audio
     exe: steghide
     scoop: steghide
-    bucket: nasrya
+    bucket: winsploit
     run_cmd: steghide
     args_hint: "info image.jpg"
     note: legacy 2003 Win32 build - still the reference steghide; extract with -sf image.jpg -p <passphrase>
@@ -445,7 +445,7 @@ tools:
     description: Web server vulnerability scanner
     exe: nikto
     scoop: nikto
-    bucket: nasrya
+    bucket: winsploit
     run_cmd: nikto
     args_hint: "-h https://example.com"
 
@@ -454,6 +454,6 @@ tools:
     description: SecLists essentials - web, DNS, password, username and LFI wordlists
     exe: '{scoop_app}\common.txt'
     scoop: seclists-lite
-    bucket: nasrya
+    bucket: winsploit
     launch: dataset
     note: other tools' args already point at these lists; Enter shows the files and copies the folder path

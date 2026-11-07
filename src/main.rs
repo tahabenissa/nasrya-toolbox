@@ -1,11 +1,11 @@
-//! nasrya — native-Windows security toolbox & command runner.
+//! winsploit — native-Windows security toolbox & command runner.
 //!
 //! Usage:
-//!   nasrya [--catalog <path>]         launch the interactive dashboard (TUI)
-//!   nasrya [--catalog <path>] list    print the tool catalog and exit
-//!   nasrya hashid <hash>...           identify hash types
-//!   nasrya --help                     show this help
-//!   nasrya --version                  show version
+//!   winsploit [--catalog <path>]         launch the interactive dashboard (TUI)
+//!   winsploit [--catalog <path>] list    print the tool catalog and exit
+//!   winsploit hashid <hash>...           identify hash types
+//!   winsploit --help                     show this help
+//!   winsploit --version                  show version
 
 mod app;
 mod args;
@@ -42,7 +42,7 @@ fn main() -> Result<()> {
         } else if args[i] == "--catalog" {
             args.remove(i);
             if i >= args.len() {
-                eprintln!("nasrya: --catalog needs a path");
+                eprintln!("winsploit: --catalog needs a path");
                 std::process::exit(2);
             }
             catalog = Some(PathBuf::from(args.remove(i)));
@@ -57,13 +57,13 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some("--version") | Some("-V") => {
-            println!("nasrya {VERSION}");
+            println!("winsploit {VERSION}");
             Ok(())
         }
         Some("list") => list(catalog.as_deref()),
         Some("hashid") => {
             if args.len() < 2 {
-                eprintln!("usage: nasrya hashid <hash> [<hash> ...]");
+                eprintln!("usage: winsploit hashid <hash> [<hash> ...]");
                 std::process::exit(2);
             }
             for (i, h) in args[1..].iter().enumerate() {
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some(other) => {
-            eprintln!("nasrya: unknown command '{other}'. Try `nasrya --help`.");
+            eprintln!("winsploit: unknown command '{other}'. Try `winsploit --help`.");
             std::process::exit(2);
         }
         None => run_tui(catalog.as_deref()),
@@ -98,7 +98,7 @@ struct Loaded {
 
 fn load_catalog(explicit: Option<&Path>) -> Result<Loaded> {
     let path = registry::find_catalog(explicit)?;
-    let ignored = match (explicit, std::env::var_os("NASRYA_CATALOG")) {
+    let ignored = match (explicit, std::env::var_os("WINSPLOIT_CATALOG")) {
         (None, None) => registry::ignored_cwd_catalog(&path),
         _ => None,
     };
@@ -118,7 +118,7 @@ fn list(explicit: Option<&Path>) -> Result<()> {
     } = load_catalog(explicit)?;
     if let Some(ignored) = ignored {
         eprintln!(
-            "nasrya: note: ignoring {} (catalogs are never loaded from the current directory \
+            "winsploit: note: ignoring {} (catalogs are never loaded from the current directory \
              implicitly; use --catalog to opt in)",
             ignored.display()
         );
@@ -136,7 +136,7 @@ fn list(explicit: Option<&Path>) -> Result<()> {
         .unwrap_or(0);
 
     // Write through a locked handle and stop quietly if the reader goes away
-    // (`nasrya list | Select-Object -First 5`), instead of panicking like
+    // (`winsploit list | Select-Object -First 5`), instead of panicking like
     // println! does on a closed pipe.
     // A shell opened before an install still has the old PATH; look at the
     // persisted one too, as the dashboard does on `r`.
@@ -148,7 +148,7 @@ fn list(explicit: Option<&Path>) -> Result<()> {
     let found = detect::probe_all(&probes);
     let mut out = std::io::stdout().lock();
     let res = (|| -> std::io::Result<()> {
-        writeln!(out, "nasrya — {} tools  ({})", tools.len(), path.display())?;
+        writeln!(out, "winsploit — {} tools  ({})", tools.len(), path.display())?;
         for (t, f) in tools.iter().zip(found) {
             let state = match &f {
                 detect::Found::Installed(_) => "installed",
@@ -187,7 +187,7 @@ fn run_tui(explicit: Option<&Path>) -> Result<()> {
         ignored,
     } = load_catalog(explicit)?;
     if catalog.tools.is_empty() {
-        eprintln!("nasrya: no tools found in {}", path.display());
+        eprintln!("winsploit: no tools found in {}", path.display());
         return Ok(());
     }
     let mut terminal = ratatui::init();
@@ -204,16 +204,16 @@ fn run_tui(explicit: Option<&Path>) -> Result<()> {
 fn print_help() {
     println!(
         "{}\n\
-nasrya {VERSION} — native-Windows security toolbox & command runner\n\n\
+winsploit {VERSION} — native-Windows security toolbox & command runner\n\n\
 USAGE:\n\
-    nasrya [--catalog <path>]         launch the interactive dashboard\n\
-    nasrya [--catalog <path>] list    list the tool catalog with install status\n\
-    nasrya hashid <hash>...           identify hash types (+ hashcat / john modes)\n\
-    nasrya --help                     show this help\n\
-    nasrya --version                  show version\n\n\
+    winsploit [--catalog <path>]         launch the interactive dashboard\n\
+    winsploit [--catalog <path>] list    list the tool catalog with install status\n\
+    winsploit hashid <hash>...           identify hash types (+ hashcat / john modes)\n\
+    winsploit --help                     show this help\n\
+    winsploit --version                  show version\n\n\
 CATALOG (tools.yaml) is looked up in this order:\n\
-    --catalog <path>, then %NASRYA_CATALOG%, then next to nasrya.exe,\n\
-    then the source checkout (dev builds), then %APPDATA%\\nasrya\\tools.yaml.\n\
+    --catalog <path>, then %WINSPLOIT_CATALOG%, then next to winsploit.exe,\n\
+    then the source checkout (dev builds), then %APPDATA%\\winsploit\\tools.yaml.\n\
     It is never read from the current directory unless you pass --catalog.",
         banner::LOGO
     );

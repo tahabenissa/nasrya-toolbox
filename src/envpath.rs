@@ -1,9 +1,9 @@
-//! Picking up PATH changes made while nasrya is running.
+//! Picking up PATH changes made while winsploit is running.
 //!
 //! A process gets a copy of PATH when it starts. When a Scoop install adds a
 //! directory to the *user* PATH (`env_add_path`, e.g. openssl), or Scoop
-//! itself gets installed mid-session, nasrya's copy doesn't change, so the
-//! tool keeps showing as missing until nasrya restarts. `refresh()` re-reads
+//! itself gets installed mid-session, winsploit's copy doesn't change, so the
+//! tool keeps showing as missing until winsploit restarts. `refresh()` re-reads
 //! the persistent PATH from the registry (as Explorer does on
 //! WM_SETTINGCHANGE) and appends any new directories to our own PATH.
 

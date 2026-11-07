@@ -198,15 +198,15 @@ pub struct Catalog {
 /// Where to look for `tools.yaml`, in priority order.
 ///
 /// The catalog decides which commands Enter runs, so it is **never** taken
-/// implicitly from the current directory: nasrya is routinely started inside
+/// implicitly from the current directory: winsploit is routinely started inside
 /// untrusted folders (challenge files, loot, cloned repos), and a planted
 /// `tools.yaml` there could point `nmap` at anything. To use one on purpose,
-/// pass `--catalog .\tools.yaml` or set `NASRYA_CATALOG`.
+/// pass `--catalog .\tools.yaml` or set `WINSPLOIT_CATALOG`.
 pub fn catalog_candidates(explicit: Option<&Path>) -> Vec<PathBuf> {
     if let Some(p) = explicit {
         return vec![p.to_path_buf()];
     }
-    if let Some(p) = std::env::var_os("NASRYA_CATALOG") {
+    if let Some(p) = std::env::var_os("WINSPLOIT_CATALOG") {
         return vec![PathBuf::from(p)];
     }
     let mut out = Vec::new();
@@ -214,27 +214,27 @@ pub fn catalog_candidates(explicit: Option<&Path>) -> Vec<PathBuf> {
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
     {
-        // shipped layout: tools.yaml next to nasrya.exe
+        // shipped layout: tools.yaml next to winsploit.exe
         out.push(dir.join("tools.yaml"));
-        // dev layout: target\{debug,release}\nasrya.exe inside the nasrya
+        // dev layout: target\{debug,release}\winsploit.exe inside the winsploit
         // checkout. That's the binary's own source tree, not wherever the
         // user happens to be.
         for root in dir.ancestors().skip(1).take(3) {
-            if is_nasrya_checkout(root) {
+            if is_winsploit_checkout(root) {
                 out.push(root.join("tools.yaml"));
                 break;
             }
         }
     }
     if let Some(appdata) = std::env::var_os("APPDATA") {
-        out.push(PathBuf::from(appdata).join("nasrya").join("tools.yaml"));
+        out.push(PathBuf::from(appdata).join("winsploit").join("tools.yaml"));
     }
     out
 }
 
-fn is_nasrya_checkout(dir: &Path) -> bool {
+fn is_winsploit_checkout(dir: &Path) -> bool {
     fs::read_to_string(dir.join("Cargo.toml"))
-        .map(|t| t.lines().any(|l| l.trim() == r#"name = "nasrya""#))
+        .map(|t| t.lines().any(|l| l.trim() == r#"name = "winsploit""#))
         .unwrap_or(false)
 }
 
@@ -368,7 +368,7 @@ mod tests {
         let mut c = parse(
             "tools:\n\
              \x20 - {name: gobuster, exe: gobuster, scoop: gobuster, run_cmd: gobuster, args_hint: 'dir -w \"{app:seclists-lite}\\common.txt\" -u x'}\n\
-             \x20 - {name: wl, exe: '{scoop_app}\\common.txt', scoop: seclists-lite, bucket: nasrya, launch: dataset}\n\
+             \x20 - {name: wl, exe: '{scoop_app}\\common.txt', scoop: seclists-lite, bucket: winsploit, launch: dataset}\n\
              \x20 - {name: odd, exe: x, scoop: x, run_cmd: x, args_hint: '{app:} {app:a b} {app:ok} {app:unclosed'}\n",
         )
         .unwrap();

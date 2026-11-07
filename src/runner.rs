@@ -38,7 +38,7 @@ pub struct Spawned {
 
 /// Spawn `cmd`, streaming its output to `tx`.
 ///
-/// The child never shares nasrya's console input: with `with_stdin` it gets
+/// The child never shares winsploit's console input: with `with_stdin` it gets
 /// a pipe the UI can type into, otherwise stdin is closed. (Inheriting the
 /// console made a prompting tool race the dashboard for keystrokes.)
 pub fn spawn_streaming(
@@ -290,7 +290,7 @@ mod tests {
         use super::{spawn_streaming, AppEvent};
         use std::time::Duration;
 
-        let dir = std::env::temp_dir().join(format!("nasrya-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("winsploit-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("out.txt");
         std::fs::write(&file, b"caf\xe9\r\nsecond\r\nthird\r\n").unwrap();

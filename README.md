@@ -1,12 +1,12 @@
 <div align="center">
 
 ```
- ███╗   ██╗ █████╗ ███████╗██████╗ ██╗   ██╗ █████╗
- ████╗  ██║██╔══██╗██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗
- ██╔██╗ ██║███████║███████╗██████╔╝ ╚████╔╝ ███████║
- ██║╚██╗██║██╔══██║╚════██║██╔══██╗  ╚██╔╝  ██╔══██║
- ██║ ╚████║██║  ██║███████║██║  ██║   ██║   ██║  ██║
- ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
+ ██╗    ██╗ ██╗ ███╗   ██╗ ███████╗ ██████╗  ██╗       ██████╗  ██╗ ████████╗
+ ██║    ██║ ██║ ████╗  ██║ ██╔════╝ ██╔══██╗ ██║      ██╔═══██╗ ██║ ╚══██╔══╝
+ ██║ █╗ ██║ ██║ ██╔██╗ ██║ ███████╗ ██████╔╝ ██║      ██║   ██║ ██║    ██║
+ ██║███╗██║ ██║ ██║╚██╗██║ ╚════██║ ██╔═══╝  ██║      ██║   ██║ ██║    ██║
+ ╚███╔███╔╝ ██║ ██║ ╚████║ ███████║ ██║      ███████╗ ╚██████╔╝ ██║    ██║
+  ╚══╝╚══╝  ╚═╝ ╚═╝  ╚═══╝ ╚══════╝ ╚═╝      ╚══════╝  ╚═════╝  ╚═╝    ╚═╝
 ```
 
 ### The native-Windows security toolbox, in your terminal.
@@ -37,14 +37,14 @@ No WSL. No VM. No guesswork about what actually works on Windows.
 ---
 
 > [!WARNING]
-> **Authorized use only.** `nasrya` is for authorized penetration testing, security research,
+> **Authorized use only.** `winsploit` is for authorized penetration testing, security research,
 > CTFs and learning. Only point it at systems you own or have **explicit written permission** to
 > test. Unauthorized scanning or attacking is illegal in most jurisdictions, and staying inside
 > your rules of engagement is your responsibility.
 
 ---
 
-## Why nasrya?
+## Why winsploit?
 
 Kali is the home of security tooling, but plenty of people work on **Windows**, and the existing
 options all make you compromise:
@@ -54,15 +54,15 @@ options all make you compromise:
 | **Commando VM / FLARE-VM** | Excellent, thorough | One-shot *VM provisioners*, not something you open every day |
 | **PentestBox** | Right idea: native and portable | Abandoned since ~2016, unclear licensing |
 | **UniGetUI** | Great package GUI | No security curation, no "run the tool" workflow |
-| **nasrya** | Curated, native, installs **and** runs, MIT, actively developed | Alpha, see [Roadmap](#-roadmap) |
+| **winsploit** | Curated, native, installs **and** runs, MIT, actively developed | Alpha, see [Roadmap](#-roadmap) |
 
 There is no actively maintained, cleanly licensed, native-Windows launcher that both *installs*
-and *runs* security tools from one interface. `nasrya` fills that gap, and it's honest about what
+and *runs* security tools from one interface. `winsploit` fills that gap, and it's honest about what
 really works on Windows and what needs Linux.
 
 ## ⚡ Quick start
 
-**You need:** Windows 10/11, [Scoop](https://scoop.sh) (nasrya installs tools through it), and
+**You need:** Windows 10/11, [Scoop](https://scoop.sh) (winsploit installs tools through it), and
 [Rust 1.87+](https://rustup.rs) to build from source.
 
 ```powershell
@@ -70,20 +70,20 @@ really works on Windows and what needs Linux.
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 
-# 2. Build nasrya
+# 2. Build winsploit
 git clone https://github.com/tahabenissa/nasrya-toolbox
 cd nasrya-toolbox
 cargo build --release
 
 # 3. Launch the dashboard (a dev build finds the checkout's tools.yaml from any directory)
-.\target\release\nasrya
+.\target\release\winsploit
 ```
 
 Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Enter` to run it. Press
 `?` any time to see every key.
 
 > [!NOTE]
-> **Prebuilt binaries:** tagging `v*` publishes a Windows x64 zip (`nasrya.exe` + `tools.yaml`) on
+> **Prebuilt binaries:** tagging `v*` publishes a Windows x64 zip (`winsploit.exe` + `tools.yaml`) on
 > the [Releases](https://github.com/tahabenissa/nasrya-toolbox/releases) page. The current
 > `v0.1.0` release **predates** everything listed under [What's new](#-whats-new), so build from
 > source for now. The binary is unsigned, so Smart App Control may ask you to allow it.
@@ -109,15 +109,15 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 ### 📦 One-key installs, done properly
 - **Scoop** for native tools, with **missing buckets added automatically** the first time
   they're needed (`bucket/pkg` is pinned so the right package wins).
-- **pipx** for Python tools. Each gets its own venv, and nasrya installs Python and pipx
+- **pipx** for Python tools. Each gets its own venv, and winsploit installs Python and pipx
   through Scoop first if they're missing.
-- **nasrya's own Scoop bucket** for tools nobody else packages (gau, John jumbo, steghide, nikto,
+- **winsploit's own Scoop bucket** for tools nobody else packages (gau, John jumbo, steghide, nikto,
   SecLists-lite). Each has a pinned URL and **SHA-256 hash**.
 - **PATH changes picked up live** after an install, with no restart needed.
 - Detection runs **in-process and off the UI thread**, so the dashboard never freezes.
 
 ### 🧠 Built-in helpers
-- **Hash identifier** (`h` in the dashboard, or `nasrya hashid <hash>`). Works offline, knows
+- **Hash identifier** (`h` in the dashboard, or `winsploit hashid <hash>`). Works offline, knows
   37 hash formats, and gives the matching **`hashcat -m`** mode and **`john --format`** name.
 - **Per-run log files** for every run and install: the command, all output (including what you
   typed), the exit code and timestamps. Ready to use as evidence in a report.
@@ -154,7 +154,7 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 
 | ✅ Works great | ⚠️ Works, with notes | ❌ Use Linux instead |
 |---|---|---|
-| nmap, nuclei, ffuf, gobuster, httpx, subfinder, katana, radare2, Ghidra | **hashcat** needs GPU drivers · **tshark** needs Npcap and admin · Python tools need pipx (nasrya bootstraps it) | **Live Wi-Fi capture** (aircrack-ng: no monitor mode or injection) · THC-Hydra, WPScan, WhatWeb, masscan (degraded on Windows) |
+| nmap, nuclei, ffuf, gobuster, httpx, subfinder, katana, radare2, Ghidra | **hashcat** needs GPU drivers · **tshark** needs Npcap and admin · Python tools need pipx (winsploit bootstraps it) | **Live Wi-Fi capture** (aircrack-ng: no monitor mode or injection) · THC-Hydra, WPScan, WhatWeb, masscan (degraded on Windows) |
 
 > [!IMPORTANT]
 > **Wireless, honestly:** live Wi-Fi monitor mode and packet injection **don't work** on Windows
@@ -165,11 +165,11 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 ## 🚀 Usage
 
 ```text
-nasrya                    launch the interactive dashboard
-nasrya list               list the catalog with install status (installed / missing / CONFLICT)
-nasrya hashid <h> [<h>…]  identify one or more hashes (hashcat -m / john --format hints)
-nasrya --help, -h         show help
-nasrya --version, -V      show version
+winsploit                    launch the interactive dashboard
+winsploit list               list the catalog with install status (installed / missing / CONFLICT)
+winsploit hashid <h> [<h>…]  identify one or more hashes (hashcat -m / john --format hints)
+winsploit --help, -h         show help
+winsploit --version, -V      show version
 
 --catalog <path>          use a specific tools.yaml (works with or without `list`)
 ```
@@ -206,7 +206,7 @@ The args and hash prompts are real line editors:
 **Quoting:** arguments split on spaces, and `"double"` or `'single'` quotes keep spaces together:
 
 ```text
--H "User-Agent: nasrya"     -w "C:\My Lists\big.txt"
+-H "User-Agent: winsploit"     -w "C:\My Lists\big.txt"
 ```
 
 Backslashes are literal (no need to double them) and `\"` is a literal quote. A quoted path can't
@@ -217,7 +217,7 @@ end in a backslash, so write `"C:\dir"`, not `"C:\dir\"`.
 Every run and install is also written to:
 
 ```text
-%LOCALAPPDATA%\nasrya\logs\<UTC timestamp>-<tool>.log
+%LOCALAPPDATA%\winsploit\logs\<UTC timestamp>-<tool>.log
 ```
 
 The path is shown when the run starts, and nothing is lost when output scrolls past the in-memory
@@ -230,7 +230,7 @@ Pressing `i` adds any bucket a tool needs the first time it's needed. To add the
 ```powershell
 scoop bucket add security https://github.com/opsqw/scoop-security   # nuclei, httpx, subfinder, katana, ffuf
 scoop bucket add extras                                             # Sysinternals, jadx, Ghidra, x64dbg, …
-scoop bucket add nasrya https://github.com/tahabenissa/nasrya-toolbox   # gau, john, steghide, nikto, seclists-lite
+scoop bucket add winsploit https://github.com/tahabenissa/nasrya-toolbox   # gau, john, steghide, nikto, seclists-lite
 ```
 
 ## ➕ Adding a tool
@@ -252,7 +252,7 @@ every field.
     bucket: security       # optional; main-bucket tools omit it
 ```
 
-A bucket Scoop doesn't know by name also needs its URL in the top-level `buckets:` map, so nasrya
+A bucket Scoop doesn't know by name also needs its URL in the top-level `buckets:` map, so winsploit
 can add it on first install.
 </details>
 
@@ -270,17 +270,17 @@ can add it on first install.
     args_hint: "-u https://example.com/endpoint"
 ```
 
-Each tool gets its own venv. If pipx is missing, nasrya installs Python and pipx through Scoop
+Each tool gets its own venv. If pipx is missing, winsploit installs Python and pipx through Scoop
 first.
 </details>
 
 <details>
-<summary><b>Tool nobody packages (nasrya's own bucket)</b></summary>
+<summary><b>Tool nobody packages (winsploit's own bucket)</b></summary>
 
 Add a Scoop manifest to [`bucket/`](bucket) with a pinned `url` and `hash`, then set
-`bucket: nasrya` in the tool's entry. Scoop handles the download, **SHA-256 verification**,
-extraction and shims, and nasrya adds the bucket on first use. `cargo test` checks that every
-manifest is well-formed and that every `bucket: nasrya` entry has one.
+`bucket: winsploit` in the tool's entry. Scoop handles the download, **SHA-256 verification**,
+extraction and shims, and winsploit adds the bucket on first use. `cargo test` checks that every
+manifest is well-formed and that every `bucket: winsploit` entry has one.
 </details>
 
 <details>
@@ -326,17 +326,17 @@ is shown every time the tool runs. Bad entries (a missing `scoop:`/`pipx:`, a we
 
 ## 🔒 Security model
 
-nasrya runs tools against real targets, often from folders full of untrusted files. It's built for
+winsploit runs tools against real targets, often from folders full of untrusted files. It's built for
 that:
 
 - **No implicit catalog loading from the current directory.** The catalog decides what `Enter`
   runs, so a malicious `tools.yaml` in a CTF folder, a loot dir or a cloned repo is **ignored**.
-  nasrya tells you it skipped one, and you can opt in with `--catalog .\tools.yaml`.
-- **Catalog resolution order:** `--catalog <path>`, then `%NASRYA_CATALOG%`, then the one next to
-  `nasrya.exe`, then the source checkout (dev builds), then `%APPDATA%\nasrya\tools.yaml`. The
+  winsploit tells you it skipped one, and you can opt in with `--catalog .\tools.yaml`.
+- **Catalog resolution order:** `--catalog <path>`, then `%WINSPLOIT_CATALOG%`, then the one next to
+  `winsploit.exe`, then the source checkout (dev builds), then `%APPDATA%\winsploit\tools.yaml`. The
   active path is shown in the dashboard.
 - **Wrong binaries are blocked.** `verify:` checks catch same-named programs earlier on PATH.
-- **Downloads are hash-pinned.** Every manifest in nasrya's bucket has a fixed URL and SHA-256.
+- **Downloads are hash-pinned.** Every manifest in winsploit's bucket has a fixed URL and SHA-256.
 - **Arguments are parsed, not shelled.** Quote-aware splitting builds a real argv; there's no
   command-string concatenation. Programs are resolved by PATH × PATHEXT (never the current
   directory), and `.cmd`/`.bat` shims go through Rust's escaped cmd.exe path.
@@ -365,7 +365,7 @@ flowchart LR
 | `detect.rs` | PATH × PATHEXT detection (ground truth) and `verify:` impostor checks |
 | `install.rs` | Install planning (Scoop / pipx, including Python and pipx bootstrap) |
 | `scoop.rs` | Scoop buckets, package installs, app directories |
-| `envpath.rs` | Picks up PATH changes made after nasrya started |
+| `envpath.rs` | Picks up PATH changes made after winsploit started |
 | `args.rs` | Quote-aware argument splitting |
 | `editor.rs` | Args prompt line editor and per-tool history |
 | `hashid.rs` | Built-in hash identifier |
@@ -401,7 +401,7 @@ Pushing a `v*` tag builds and publishes a release zip.
 
 **Engine**
 - pipx installs and `gui` / `web` / `dataset` launch modes.
-- nasrya's own hash-pinned Scoop bucket for unpackaged tools.
+- winsploit's own hash-pinned Scoop bucket for unpackaged tools.
 - `{scoop_app}` and `{app:NAME}` placeholders.
 - Automatic Scoop bucket add, with `bucket/pkg` pinning.
 - `verify:` impostor detection (`◐` conflict state).
@@ -418,20 +418,20 @@ Pushing a `v*` tag builds and publishes a release zip.
 **Dashboard**
 - Tool list filter (`/`), key help overlay (`?`) and a shorter footer.
 - Args prompt with real line editing, history and paste.
-- Built-in hash identifier (`h` / `nasrya hashid`).
+- Built-in hash identifier (`h` / `winsploit hashid`).
 - Tool-name column sized to the longest name.
 
 **Security and hygiene**
 - Never loads `tools.yaml` from the current directory implicitly.
 - Quote-aware argument splitting.
-- Crate renamed to `nasrya`, `Cargo.lock` tracked, `rust-version` declared, clippy clean.
+- Crate renamed to `winsploit`, `Cargo.lock` tracked, `rust-version` declared, clippy clean.
 - Security bucket moved to its new home, `opsqw/scoop-security`.
 </details>
 
 ## 🗺️ Roadmap
 
 - [x] Rich catalog: 45 tools across recon, web, passwords, crypto, forensics, stego, reversing, pwn, OSINT and wordlists
-- [x] Scoop bucket auto-add · pipx installs · GUI / web / dataset launch modes · nasrya's own bucket
+- [x] Scoop bucket auto-add · pipx installs · GUI / web / dataset launch modes · winsploit's own bucket
 - [x] Scrollback, output search, per-run log files
 - [x] Built-in hash identifier
 - [ ] Per-engagement workspaces (scope list, authorization record, audit log)
@@ -455,4 +455,4 @@ Inspired by the native-toolbox idea behind **PentestBox**, the provisioning mode
 
 ## 📄 License
 
-[MIT](LICENSE) © nasrya contributors. Each bundled or installed tool keeps its own license.
+[MIT](LICENSE) © winsploit contributors. Each bundled or installed tool keeps its own license.

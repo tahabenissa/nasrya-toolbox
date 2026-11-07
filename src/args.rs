@@ -97,8 +97,8 @@ mod tests {
     #[test]
     fn double_quotes_group() {
         assert_eq!(
-            s(r#"-u https://t/FUZZ -H "User-Agent: nasrya""#),
-            ["-u", "https://t/FUZZ", "-H", "User-Agent: nasrya"]
+            s(r#"-u https://t/FUZZ -H "User-Agent: winsploit""#),
+            ["-u", "https://t/FUZZ", "-H", "User-Agent: winsploit"]
         );
     }
 

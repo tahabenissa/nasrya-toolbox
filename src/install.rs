@@ -58,7 +58,7 @@ pub fn plan(
             if !pre.pipx {
                 if !pre.scoop {
                     return Err(format!(
-                        "{} needs pipx, which isn't installed. Either install Scoop (nasrya \
+                        "{} needs pipx, which isn't installed. Either install Scoop (winsploit \
                          then sets up Python + pipx for you) or run: python -m pip install \
                          --user pipx && python -m pipx ensurepath",
                         tool.name
@@ -70,7 +70,7 @@ pub fn plan(
                 steps.push("scoop install pipx".to_string());
             }
             // Puts pipx's bin dir (~\.local\bin) on the user PATH; idempotent.
-            // nasrya re-reads PATH after the install, so the tool shows up
+            // winsploit re-reads PATH after the install, so the tool shows up
             // without a restart.
             steps.push("pipx ensurepath".to_string());
             steps.push(format!("pipx install {spec}"));

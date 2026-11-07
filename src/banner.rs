@@ -1,4 +1,4 @@
-//! ASCII-art banner and splash screen for nasrya.
+//! ASCII-art banner and splash screen for winsploit.
 
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -6,14 +6,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
-/// "NASRYA" in the ANSI-Shadow figlet style. Used by main.rs help text too.
+/// "WINSPLOIT" in the ANSI-Shadow figlet style. Used by main.rs help text too.
 pub const LOGO: &str = r#"
- ███╗   ██╗ █████╗ ███████╗██████╗ ██╗   ██╗ █████╗
- ████╗  ██║██╔══██╗██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗
- ██╔██╗ ██║███████║███████╗██████╔╝ ╚████╔╝ ███████║
- ██║╚██╗██║██╔══██║╚════██║██╔══██╗  ╚██╔╝  ██╔══██║
- ██║ ╚████║██║  ██║███████║██║  ██║   ██║   ██║  ██║
- ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝
+ ██╗    ██╗ ██╗ ███╗   ██╗ ███████╗ ██████╗  ██╗       ██████╗  ██╗ ████████╗
+ ██║    ██║ ██║ ████╗  ██║ ██╔════╝ ██╔══██╗ ██║      ██╔═══██╗ ██║ ╚══██╔══╝
+ ██║ █╗ ██║ ██║ ██╔██╗ ██║ ███████╗ ██████╔╝ ██║      ██║   ██║ ██║    ██║
+ ██║███╗██║ ██║ ██║╚██╗██║ ╚════██║ ██╔═══╝  ██║      ██║   ██║ ██║    ██║
+ ╚███╔███╔╝ ██║ ██║ ╚████║ ███████║ ██║      ███████╗ ╚██████╔╝ ██║    ██║
+  ╚══╝╚══╝  ╚═╝ ╚═╝  ╚═══╝ ╚══════╝ ╚═╝      ╚══════╝  ╚═════╝  ╚═╝    ╚═╝
 "#;
 
 /// Linear interpolation between two bytes.
@@ -158,7 +158,7 @@ pub fn render_splash(f: &mut Frame, tick: u64) {
 pub fn wordmark() -> Line<'static> {
     Line::from(vec![
         Span::styled(
-            " nasrya ",
+            " winsploit ",
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Cyan)
