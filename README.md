@@ -26,14 +26,14 @@ No WSL. No VM. No guesswork about what actually works on Windows.
 ![tests](https://img.shields.io/badge/tests-169%20passing-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-[Quick start](#-quick-start) •
-[Features](#-features) •
-[Catalog](#-the-catalog) •
-[Usage](#-usage) •
-[Adding tools](#-adding-a-tool) •
-[Security model](#-security-model) •
-[Architecture](#-architecture) •
-[Roadmap](#-roadmap)
+[Quick start](#quick-start) •
+[Features](#features) •
+[Catalog](#the-catalog) •
+[Usage](#usage) •
+[Adding tools](#adding-a-tool) •
+[Security model](#security-model) •
+[Architecture](#architecture) •
+[Roadmap](#roadmap)
 
 </div>
 
@@ -57,13 +57,13 @@ options all make you compromise:
 | **Commando VM / FLARE-VM** | Excellent, thorough | One-shot *VM provisioners*, not something you open every day |
 | **PentestBox** | Right idea: native and portable | Abandoned since ~2016, unclear licensing |
 | **UniGetUI** | Great package GUI | No security curation, no "run the tool" workflow |
-| **Winsploit** | Curated, native, installs **and** runs, MIT, actively developed | Alpha, see [Roadmap](#-roadmap) |
+| **Winsploit** | Curated, native, installs **and** runs, MIT, actively developed | Alpha, see [Roadmap](#roadmap) |
 
 There is no actively maintained, cleanly licensed, native-Windows launcher that both *installs*
 and *runs* security tools from one interface. Winsploit fills that gap, and it's honest about what
 really works on Windows and what needs Linux.
 
-## ⚡ Quick start
+## Quick start
 
 **You need:** Windows 10/11, [Scoop](https://scoop.sh) (Winsploit installs tools through it), and
 [Rust 1.87+](https://rustup.rs) to build from source.
@@ -88,19 +88,19 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 > [!NOTE]
 > **Prebuilt binaries:** tagging `v*` publishes a Windows x64 zip (`winsploit.exe` + `tools.yaml`) on
 > the [Releases](https://github.com/tahabenissa/nasrya-toolbox/releases) page. The current
-> `v0.1.0` release **predates** everything listed under [What's new](#-whats-new), so build from
+> `v0.1.0` release **predates** everything listed under [What's new](#whats-new), so build from
 > source for now. The binary is unsigned, so Smart App Control may ask you to allow it.
 
-## ✨ Features
+## Features
 
-### 🎛️ A dashboard built for the keyboard
+### A dashboard built for the keyboard
 - **Browse by category** with live install status: `●` installed, `○` missing, `◐` conflict.
 - **Instant filter (`/`)** by name, category or description. Words AND together.
 - **A real line editor** for arguments: word jumps, word delete, paste, and per-tool **history**
   with `↑/↓`.
 - **Key help overlay (`?`)** so the footer stays short.
 
-### 📡 Live, interactive output
+### Live, interactive output
 - stdout/stderr **stream into the output pane** in real time, color-coded.
 - **Talk to running tools.** Each process gets its own input pipe, so you can answer prompts
   (`Ctrl+D` = end of input) without fighting the dashboard for keystrokes.
@@ -109,7 +109,7 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
   bars and ANSI escape codes are cleaned up instead of smearing the pane.
 - **`c` cancels** the whole process tree, not just the parent.
 
-### 📦 One-key installs, done properly
+### One-key installs, done properly
 - **Scoop** for native tools, with **missing buckets added automatically** the first time
   they're needed (`bucket/pkg` is pinned so the right package wins).
 - **pipx** for Python tools. Each gets its own venv, and Winsploit installs Python and pipx
@@ -119,7 +119,7 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 - **PATH changes picked up live** after an install, with no restart needed.
 - Detection runs **in-process and off the UI thread**, so the dashboard never freezes.
 
-### 🏁 Built for CTFs
+### Built for CTFs
 - **Challenge workspaces** (`C`). One folder per challenge under `%USERPROFILE%\ctf\<event>\<challenge>`
   with its target, flag format, files, notes, run logs and flags. The header shows what you're on.
 - **Recipes**. Enter on nmap, ffuf, john, upx, volatility3 and a dozen more offers ready-made
@@ -128,13 +128,13 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 - **Flag catcher**. `picoCTF{…}`, `HTB{…}`, `flag{…}` and the event's own format are highlighted
   in any output, announced, copied to the clipboard, saved to `flags.txt` and listed under `F`.
 
-### 🧠 Built-in helpers
+### Built-in helpers
 - **Hash identifier** (`h` in the dashboard, or `winsploit hashid <hash>`). Works offline, knows
   45 hash formats, and gives the matching **`hashcat -m`** mode and **`john --format`** name.
 - **Per-run log files** for every run and install: the command, all output (including what you
   typed), the exit code and timestamps. Ready to use as evidence in a report.
 
-### 🌐 The same session in your browser
+### The same session in your browser
 The terminal stays the main app, and the browser is a second window onto the **same live
 session**, the way Claude Code works.
 - At start-up, choose **Continue in terminal** or **Open in browser** (`--web` / `--no-web` skip
@@ -150,7 +150,7 @@ session**, the way Claude Code works.
   browser tab. `L` shows the key and every guest, makes a new key, switches roles and removes
   people. Runs a guest starts are labelled with their name and IP in the output and the run log.
 
-### 🧩 Config-driven, honest by design
+### Config-driven, honest by design
 - Every tool is a **YAML entry**, so you add one without touching code.
 - **Four launch modes:** `stream` (CLI in the pane), `gui` (desktop apps), `web` (start a server,
   open the browser) and `dataset` (wordlists).
@@ -158,29 +158,29 @@ session**, the way Claude Code works.
   Python `httpx`, Sysinternals `strings` vs GNU `strings`) and refuses to launch the wrong one.
 - **Per-tool caveats** (`note:`) are shown on every run, for example "needs Npcap + admin".
 
-## 🧰 The catalog
+## The catalog
 
 **45 tools across 11 categories**, all chosen because they run well **natively** on Windows.
 
 | Category | Tools |
 |---|---|
 | **Recon** | nmap · rustscan · gobuster · httpx · subfinder · amass · gau |
-| **Web** | sqlmap · nuclei · ffuf · feroxbuster · katana · arjun · dirsearch · wfuzz · commix · nikto · ZAP 🖥️ |
+| **Web** | sqlmap · nuclei · ffuf · feroxbuster · katana · arjun · dirsearch · wfuzz · commix · nikto · ZAP (GUI) |
 | **Passwords** | hashcat · John the Ripper (jumbo) · hashid · NetExec |
-| **Crypto** | openssl · RsaCtfTool · CyberChef 🌐 |
+| **Crypto** | openssl · RsaCtfTool · CyberChef (browser) |
 | **Forensics** | exiftool · strings (Sysinternals) · Sleuth Kit · Volatility 3 |
-| **Reversing** | radare2 · upx · jadx · apktool · Detect It Easy · Cutter 🖥️ · x64dbg 🖥️ · dnSpy 🖥️ · Ghidra 🖥️ |
+| **Reversing** | radare2 · upx · jadx · apktool · Detect It Easy · Cutter (GUI) · x64dbg (GUI) · dnSpy (GUI) · Ghidra (GUI) |
 | **Pwn** | pwntools · ropper |
 | **OSINT** | theHarvester · Sherlock |
 | **Stego** | steghide |
 | **Sniffing** | tshark |
-| **Wordlists** | SecLists-lite 📚 (wired into gobuster, ffuf, feroxbuster, dirsearch, wfuzz and john) |
+| **Wordlists** | SecLists-lite (dataset) (wired into gobuster, ffuf, feroxbuster, dirsearch, wfuzz and john) |
 
-<sub>🖥️ desktop app (`launch: gui`) · 🌐 opens in your browser (`launch: web`) · 📚 dataset (`launch: dataset`)</sub>
+<sub>(GUI) desktop app (`launch: gui`) · (browser) opens in your browser (`launch: web`) · (dataset) data, nothing to run (`launch: dataset`)</sub>
 
 ### Honest scope
 
-| ✅ Works great | ⚠️ Works, with notes | ❌ Use Linux instead |
+| Works great | Works, with notes | Use Linux instead |
 |---|---|---|
 | nmap, nuclei, ffuf, gobuster, httpx, subfinder, katana, radare2, Ghidra | **hashcat** needs GPU drivers · **tshark** needs Npcap and admin · Python tools need pipx (Winsploit bootstraps it) | **Live Wi-Fi capture** (aircrack-ng: no monitor mode or injection) · THC-Hydra, WPScan, WhatWeb, masscan (degraded on Windows) |
 
@@ -190,7 +190,7 @@ session**, the way Claude Code works.
 > For real wireless work, use Linux with a supported USB adapter. That's why aircrack-ng is
 > deliberately left out of the catalog.
 
-## 🚀 Usage
+## Usage
 
 ```text
 winsploit                 launch the interactive dashboard
@@ -360,7 +360,7 @@ scoop bucket add extras                                             # Sysinterna
 scoop bucket add winsploit https://github.com/tahabenissa/nasrya-toolbox   # gau, john, steghide, nikto, seclists-lite
 ```
 
-## ➕ Adding a tool
+## Adding a tool
 
 Edit [`tools.yaml`](tools.yaml). No code changes needed, and the header of that file documents
 every field.
@@ -451,7 +451,7 @@ is shown every time the tool runs. Bad entries (a missing `scoop:`/`pipx:`, a we
 `url:`, …) are all reported together when the catalog loads.
 </details>
 
-## 🔒 Security model
+## Security model
 
 Winsploit runs tools against real targets, often from folders full of untrusted files. It's built for
 that:
@@ -486,7 +486,7 @@ that:
 - **Optional isolation for samples.** `S` runs debuggers and other reversing tools in Windows
   Sandbox with the sample read-only, one writable output folder and no network by default.
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -546,7 +546,7 @@ cd site; npm ci; npm run dev          # http://localhost:3000
 node site/scripts/readme-banner.mjs   # regenerate .github/banner.svg (the README wordmark)
 ```
 
-## 🆕 What's new
+## What's new
 
 <details open>
 <summary><b>Unreleased (since v0.1.0)</b></summary>
@@ -595,7 +595,7 @@ node site/scripts/readme-banner.mjs   # regenerate .github/banner.svg (the READM
 - Security bucket moved to its new home, `opsqw/scoop-security`.
 </details>
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] Rich catalog: 45 tools across recon, web, passwords, crypto, forensics, stego, reversing, pwn, OSINT and wordlists
 - [x] Scoop bucket auto-add · pipx installs · GUI / web / dataset launch modes · Winsploit's own bucket
@@ -607,19 +607,19 @@ node site/scripts/readme-banner.mjs   # regenerate .github/banner.svg (the READM
 - [ ] One-shot report generation (Markdown / HTML)
 - [ ] New tagged release with prebuilt binary
 
-## 🤝 Contributing
+## Contributing
 
 New tools are the easiest place to start: add a `tools.yaml` entry (and a `bucket/` manifest if
 nobody packages the tool), run `cargo test`, and open a PR. Please only add tools that really
 work natively on Windows, and use `note:` to document any caveats.
 
-## 🙏 Credits & prior art
+## Credits & prior art
 
 Inspired by the native-toolbox idea behind **PentestBox**, the provisioning model of
 **Commando VM / FLARE-VM** and the package catalogs of the **Scoop** security buckets. Built with
 [ratatui](https://ratatui.rs). Tool curation draws on
 [awesome-pentest](https://github.com/enaqx/awesome-pentest).
 
-## 📄 License
+## License
 
 [MIT](LICENSE) © Winsploit contributors. Each bundled or installed tool keeps its own license.

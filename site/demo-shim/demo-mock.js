@@ -375,7 +375,7 @@
       : `${t.bucket && t.bucket !== 'main' ? `scoop bucket add ${t.bucket} && ` : ''}scoop install ${t.bucket && t.bucket !== 'main' ? `${t.bucket}/` : ''}${t.package}`;
     out(0, `:: install of ${t.name} started from the browser`, `$ ${step}`);
     const lines = t.install === 'pipx'
-      ? [`creating virtual environment...`, `installing ${t.package}...`, `  installed package ${t.package}, installed using Python 3.12.7`, `  These apps are now globally available`, `    - ${t.exe}.exe`, 'done! ✨ 🌟 ✨']
+      ? [`creating virtual environment...`, `installing ${t.package}...`, `  installed package ${t.package}, installed using Python 3.12.7`, `  These apps are now globally available`, `    - ${t.exe}.exe`, 'done!']
       : [`Installing '${t.package}' [64bit] from '${t.bucket || 'main'}' bucket`, `${t.package}.zip (4.1 MB) [===============================] 100%`, `Checking hash of ${t.package}.zip ... ok.`, `Extracting ${t.package}.zip ... done.`, `Linking ~\\scoop\\apps\\${t.package}\\current`, `Creating shim for '${t.exe}'.`, `'${t.package}' was installed successfully!`];
     S.status_line = `installing ${t.name}…`;
     pushState();
