@@ -1,6 +1,6 @@
 [package]
 name = "winsploit"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.87"
 description = "Native-Windows security toolbox: a TUI launcher that detects, installs (via Scoop) and runs pentest tools."
