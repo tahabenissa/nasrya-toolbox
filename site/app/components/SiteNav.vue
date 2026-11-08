@@ -29,7 +29,7 @@ onMounted(async () => {
     const cached = sessionStorage.getItem('ws-stars');
     if (cached) stars.value = Number(cached);
     else {
-      const r = await fetch('https://api.github.com/repos/tahabenissa/nasrya-toolbox');
+      const r = await fetch('https://api.github.com/repos/tahabenissa/winsploit');
       if (r.ok) {
         stars.value = (await r.json()).stargazers_count;
         sessionStorage.setItem('ws-stars', String(stars.value));

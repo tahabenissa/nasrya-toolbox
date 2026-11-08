@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn fragment_is_a_terminal_profile_with_the_cube() {
-        let exe = Path::new(r"C:\Users\me\projects\nasrya-toolbox\target\release\winsploit.exe");
+        let exe = Path::new(r"C:\Users\me\projects\winsploit\target\release\winsploit.exe");
         let icon = Path::new(r"C:\Users\me\AppData\Local\winsploit\winsploit.ico");
         let f = fragment(exe, icon, "%USERPROFILE%");
         let p = &f["profiles"][0];

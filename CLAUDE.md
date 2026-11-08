@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Winsploit (formerly nasrya; the GitHub repo is still `tahabenissa/nasrya-toolbox`) is a native-Windows
+Winsploit (formerly nasrya; the GitHub repo is `tahabenissa/winsploit`) is a native-Windows
 ratatui TUI that detects, installs (via Scoop / pipx) and runs pentest tools listed in `tools.yaml`.
 Windows-only: detection, installs, process trees and paths all assume Windows.
 

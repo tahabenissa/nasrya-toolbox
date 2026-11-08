@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://tahabenissa.github.io/nasrya-toolbox/">
+<a href="https://tahabenissa.github.io/winsploit/">
   <img src=".github/banner.svg" alt="Winsploit" width="720">
 </a>
 
@@ -11,14 +11,14 @@ No WSL. No VM. No guesswork about what actually works on Windows.
 
 <br>
 
-<a href="https://tahabenissa.github.io/nasrya-toolbox/"><img src="https://img.shields.io/badge/Website-89c2d2?style=for-the-badge&logo=googlechrome&logoColor=0c191d" alt="Website" height="36"></a>&nbsp;
-<a href="https://tahabenissa.github.io/nasrya-toolbox/docs/"><img src="https://img.shields.io/badge/Docs-232831?style=for-the-badge&logo=readthedocs&logoColor=89c2d2" alt="Docs" height="36"></a>&nbsp;
-<a href="https://tahabenissa.github.io/nasrya-toolbox/demo/"><img src="https://img.shields.io/badge/Live%20demo-232831?style=for-the-badge&logo=gnubash&logoColor=89c2d2" alt="Live demo" height="36"></a>
+<a href="https://tahabenissa.github.io/winsploit/"><img src="https://img.shields.io/badge/Website-89c2d2?style=for-the-badge&logo=googlechrome&logoColor=0c191d" alt="Website" height="36"></a>&nbsp;
+<a href="https://tahabenissa.github.io/winsploit/docs/"><img src="https://img.shields.io/badge/Docs-232831?style=for-the-badge&logo=readthedocs&logoColor=89c2d2" alt="Docs" height="36"></a>&nbsp;
+<a href="https://tahabenissa.github.io/winsploit/demo/"><img src="https://img.shields.io/badge/Live%20demo-232831?style=for-the-badge&logo=gnubash&logoColor=89c2d2" alt="Live demo" height="36"></a>
 
 <br>
 
-[![CI](https://github.com/tahabenissa/nasrya-toolbox/actions/workflows/ci.yml/badge.svg)](https://github.com/tahabenissa/nasrya-toolbox/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/tahabenissa/nasrya-toolbox?include_prereleases&sort=semver)](https://github.com/tahabenissa/nasrya-toolbox/releases)
+[![CI](https://github.com/tahabenissa/winsploit/actions/workflows/ci.yml/badge.svg)](https://github.com/tahabenissa/winsploit/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/tahabenissa/winsploit?include_prereleases&sort=semver)](https://github.com/tahabenissa/winsploit/releases)
 ![status](https://img.shields.io/badge/status-alpha-orange)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 ![rust](https://img.shields.io/badge/rust-1.87%2B-B7410E)
@@ -66,7 +66,7 @@ really works on Windows and what needs Linux.
 ## Quick start
 
 **Easiest (no admin):** download `winsploit-<version>-setup.exe` from the
-[Releases](https://github.com/tahabenissa/nasrya-toolbox/releases) page. It installs to
+[Releases](https://github.com/tahabenissa/winsploit/releases) page. It installs to
 `%LOCALAPPDATA%\Programs\Winsploit`, adds Winsploit to your PATH, can set up Scoop, git, buckets and
 pipx, and lets you tick tool packs. The first time you start Winsploit it lists every tool in those
 packs and asks before installing anything. Open a **new** terminal and type `winsploit`.
@@ -85,8 +85,8 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 
 # 2. Build winsploit
-git clone https://github.com/tahabenissa/nasrya-toolbox
-cd nasrya-toolbox
+git clone https://github.com/tahabenissa/winsploit
+cd winsploit
 cargo build --release
 
 # 3. Make `winsploit` a command (adds target\release to your user PATH, no admin), and add a
@@ -113,7 +113,7 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 
 > [!NOTE]
 > **Prebuilt binaries:** tagging `v*` publishes a Windows x64 zip (`winsploit.exe` + `tools.yaml`) on
-> the [Releases](https://github.com/tahabenissa/nasrya-toolbox/releases) page. The current
+> the [Releases](https://github.com/tahabenissa/winsploit/releases) page. The current
 > `v0.1.0` release **predates** everything listed under [What's new](#whats-new), so build from
 > source for now. The binary is unsigned, so Smart App Control may ask you to allow it.
 
@@ -404,7 +404,7 @@ Pressing `i` adds any bucket a tool needs the first time it's needed. To add the
 ```powershell
 scoop bucket add security https://github.com/opsqw/scoop-security   # nuclei, httpx, subfinder, katana, ffuf
 scoop bucket add extras                                             # Sysinternals, jadx, Ghidra, x64dbg, …
-scoop bucket add winsploit https://github.com/tahabenissa/nasrya-toolbox   # gau, john, steghide, nikto, seclists-lite
+scoop bucket add winsploit https://github.com/tahabenissa/winsploit   # gau, john, steghide, nikto, seclists-lite
 ```
 
 ## Adding a tool
@@ -586,7 +586,7 @@ cargo clippy --all-targets
 CI builds, lints and smoke-tests (`--version`, `list`) on `windows-latest` for every push and PR.
 Pushing a `v*` tag builds and publishes a release zip.
 
-**Website.** The [website](https://tahabenissa.github.io/nasrya-toolbox/) (landing page, docs and
+**Website.** The [website](https://tahabenissa.github.io/winsploit/) (landing page, docs and
 a live demo of the web view) lives in `site/` and is deployed to GitHub Pages on every push to
 `main` that touches it, `tools.yaml` or `src/web/`. Tool counts, the catalog and the demo are
 generated from the repo, so adding a tool needs no site change.
@@ -667,7 +667,7 @@ work natively on Windows, and use `note:` to document any caveats.
 ## Reporting a vulnerability
 
 Please report security issues privately through
-[GitHub security advisories](https://github.com/tahabenissa/nasrya-toolbox/security/advisories/new)
+[GitHub security advisories](https://github.com/tahabenissa/winsploit/security/advisories/new)
 instead of opening a public issue. Public issues and PRs are visible to everyone, which makes
 them the wrong place for an unpatched vulnerability.
 

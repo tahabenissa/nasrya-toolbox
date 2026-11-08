@@ -218,7 +218,7 @@ mod with_dir_tests {
 
     #[test]
     fn appends_once() {
-        let d = r"C:\Users\me\projects\nasrya-toolbox\target\release";
+        let d = r"C:\Users\me\projects\winsploit\target\release";
         assert_eq!(with_dir("", d).as_deref(), Some(d));
         assert_eq!(
             with_dir(r"C:\a;C:\b;", d).unwrap(),
@@ -230,7 +230,7 @@ mod with_dir_tests {
         std::env::set_var("WINSPLOIT_TEST_HOME", r"C:\Users\me");
         assert_eq!(
             with_dir(
-                r"%WINSPLOIT_TEST_HOME%\projects\nasrya-toolbox\target\release",
+                r"%WINSPLOIT_TEST_HOME%\projects\winsploit\target\release",
                 d
             ),
             None

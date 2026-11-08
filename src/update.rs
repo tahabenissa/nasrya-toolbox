@@ -16,7 +16,7 @@ use serde::Deserialize;
 use crate::detect;
 use crate::runner::AppEvent;
 
-const REPO: &str = "tahabenissa/nasrya-toolbox";
+const REPO: &str = "tahabenissa/winsploit";
 const DAY: u64 = 24 * 60 * 60;
 
 #[derive(Deserialize)]
