@@ -12,7 +12,7 @@ use ratatui::Frame;
 
 use crate::app::{
     AgentView, App, Appearance, CatTab, ChallengeField, Confirm, Hit, JoinPrompt, Layer, Mode,
-    ProviderPick, ToastKind, ToolStatus, JOIN_CHOICES, JOIN_GRACE, TOUR_STEPS,
+    ProjectUi, ProviderPick, ToastKind, ToolStatus, JOIN_CHOICES, JOIN_GRACE, TOUR_STEPS,
 };
 use crate::banner;
 use crate::registry::{self, Launch, Sandbox};
@@ -78,6 +78,8 @@ pub fn render(f: &mut Frame, app: &App) {
         render_challenges(f, app, cur, &th, area);
     } else if let Some(cur) = app.recipe_view {
         render_recipes(f, app, cur, &th, area);
+    } else if let Some(pui) = &app.project_ui {
+        render_project_ui(f, app, pui, &th, area);
     } else if app.show_help {
         render_help(f, &th, area);
     } else if let Some(cur) = app.lan_panel {
@@ -177,6 +179,10 @@ pub const HELP: &[HelpGroup] = &[
         "install the selected tool (scoop / pipx), in the console",
     ),
             ("r", "re-detect installed tools (picks up PATH changes)"),
+            (
+                "p",
+                "projects: open/create a working folder — tools run there ({proj} = its path)",
+            ),
         ],
     },
     HelpGroup {
@@ -185,9 +191,9 @@ pub const HELP: &[HelpGroup] = &[
         rows: &[
             ("a", "agent: AI reads the output and suggests next steps"),
             (
-        "A",
-        "choose the agent's AI (claude / gemini / deepseek / openai / ollama)",
-    ),
+                "A",
+                "choose the agent's AI (claude / gemini / deepseek / openai / ollama)",
+            ),
         ],
     },
     HelpGroup {
@@ -821,6 +827,117 @@ fn render_agent(f: &mut Frame, app: &App, ag: &AgentView, th: &Theme, area: Rect
     );
 }
 
+/// The project manager overlay (`p`): New / Open / Recent, a folder browser,
+/// and a name prompt for a new project.
+fn render_project_ui(f: &mut Frame, app: &App, ui: &ProjectUi, th: &Theme, area: Rect) {
+    let p = &th.pal;
+    let mut lines: Vec<Line> = vec![Line::raw("")];
+    let (title, hint): (&str, &str) = match ui {
+        ProjectUi::Menu { cursor } => {
+            let recents = app.pstore.existing_recents();
+            let mut rows: Vec<(String, Option<String>)> = vec![
+                ("＋  New project…".into(), None),
+                ("📂  Open a folder…".into(), None),
+            ];
+            for r in &recents {
+                let name = r
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| r.display().to_string());
+                rows.push((format!("•  {name}"), Some(r.display().to_string())));
+            }
+            for (i, (label, sub)) in rows.iter().enumerate() {
+                let sel = i == *cursor;
+                lines.push(Line::from(vec![
+                    Span::styled(if sel { " › " } else { "   " }, th.strong(p.accent)),
+                    Span::styled(
+                        label.clone(),
+                        if sel { th.strong(p.accent) } else { th.fg(p.fg) },
+                    ),
+                ]));
+                if let Some(path) = sub {
+                    lines.push(Line::from(Span::styled(format!("      {path}"), th.fg(p.dim))));
+                }
+            }
+            if recents.is_empty() {
+                lines.push(Line::raw(""));
+                lines.push(Line::from(Span::styled(
+                    "   no recent projects yet",
+                    th.fg(p.dim),
+                )));
+            }
+            ("project", "↑↓ · Enter · Esc close")
+        }
+        ProjectUi::Browse {
+            dir,
+            entries,
+            cursor,
+            new,
+        } => {
+            lines.push(Line::from(Span::styled(
+                format!(" {}", dir.display()),
+                th.fg(p.dim),
+            )));
+            lines.push(Line::raw(""));
+            // row 0 = parent
+            let up_sel = *cursor == 0;
+            lines.push(Line::from(vec![
+                Span::styled(if up_sel { " › " } else { "   " }, th.strong(p.accent)),
+                Span::styled("..  (up)", if up_sel { th.strong(p.accent) } else { th.fg(p.dim) }),
+            ]));
+            // show a window of entries around the cursor so long lists fit
+            let total = entries.len();
+            let max_rows = (area.height as usize).saturating_sub(10).max(5);
+            let start = (cursor.saturating_sub(1))
+                .saturating_sub(max_rows / 2)
+                .min(total.saturating_sub(max_rows));
+            for (i, e) in entries.iter().enumerate().skip(start).take(max_rows) {
+                let sel = i + 1 == *cursor;
+                let name = e
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                lines.push(Line::from(vec![
+                    Span::styled(if sel { " › " } else { "   " }, th.strong(p.accent)),
+                    Span::styled(
+                        format!("{name}/"),
+                        if sel { th.strong(p.accent) } else { th.fg(p.fg) },
+                    ),
+                ]));
+            }
+            lines.push(Line::raw(""));
+            let action = if *new {
+                "o = create a new project in THIS folder"
+            } else {
+                "o = open THIS folder as the project"
+            };
+            lines.push(Line::from(Span::styled(format!("   {action}"), th.fg(p.accent))));
+            ("choose a folder", "↑↓ move · Enter open dir · o select · Esc back")
+        }
+        ProjectUi::Name { parent, editor } => {
+            lines.push(Line::from(Span::styled(
+                format!(" new project in {}", parent.display()),
+                th.fg(p.dim),
+            )));
+            lines.push(Line::raw(""));
+            lines.push(Line::from(vec![
+                Span::styled("   name: ", th.fg(p.dim)),
+                Span::styled(editor.text().to_string(), th.strong(p.accent)),
+                Span::styled("▏", th.strong(p.accent)),
+            ]));
+            ("name the project", "Enter create · Esc back")
+        }
+    };
+
+    let w = 72.min(area.width);
+    let h = (lines.len() as u16 + 2).min(area.height);
+    let popup = overlay_area(f, th, area, w, h);
+    f.render_widget(
+        Paragraph::new(lines).block(overlay_block(th, title, hint)),
+        popup,
+    );
+}
+
 /// The `t` overlay: settings on the left, a live sample of the dashboard
 /// on the right (stacked when narrow). Everything, including this panel,
 /// is already drawn with the previewed settings.
@@ -1037,8 +1154,14 @@ fn render_header(f: &mut Frame, app: &App, th: &Theme, area: Rect) {
         .map(|w| (w.title(), w.info.target.clone()));
     // the name always shows; with a challenge, its title too
     let keep = if ctx.is_some() { 3 } else { 1 };
+    // wordmark (+ challenge), plus the open project's name like VS Code's folder
+    let mut left = banner::wordmark(th, ctx);
+    if let Some(proj) = &app.project {
+        left.spans
+            .push(Span::styled(format!("  ▪ {}", proj.name), th.strong(p.accent)));
+    }
     f.render_widget(
-        Paragraph::new(banner::fit(banner::wordmark(th, ctx), cols[0].width, keep)),
+        Paragraph::new(banner::fit(left, cols[0].width, keep)),
         cols[0],
     );
 
@@ -2424,6 +2547,32 @@ mod tests {
         ] {
             assert!(screen.contains(k), "provider picker is missing {k:?}");
         }
+    }
+
+    #[test]
+    fn project_menu_and_browser_render() {
+        let mut a = app();
+        // the New/Open/Recent menu
+        a.project_ui = Some(crate::app::ProjectUi::Menu { cursor: 0 });
+        for (w, h) in [(40, 10), (10, 4)] {
+            draw(&a, w, h);
+        }
+        let t = draw(&a, 120, 30);
+        let menu: String = (0..30).map(|y| row(&t, y)).collect::<Vec<_>>().join("\n");
+        assert!(menu.contains("New project"), "menu missing New project");
+        assert!(menu.contains("Open"), "menu missing Open");
+
+        // the folder browser
+        a.project_ui = Some(crate::app::ProjectUi::Browse {
+            dir: std::path::PathBuf::from("C:/ctf"),
+            entries: vec![std::path::PathBuf::from("C:/ctf/boxA")],
+            cursor: 0,
+            new: false,
+        });
+        let t = draw(&a, 120, 30);
+        let brw: String = (0..30).map(|y| row(&t, y)).collect::<Vec<_>>().join("\n");
+        assert!(brw.contains("boxA"), "browser missing the subfolder");
+        assert!(brw.contains(".."), "browser missing the parent row");
     }
 
     #[test]

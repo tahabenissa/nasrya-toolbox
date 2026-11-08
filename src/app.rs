@@ -351,6 +351,21 @@ pub struct ProviderPick {
     pub editing: Option<LineEditor>,
 }
 
+/// The project manager (`p`): create / open / switch the working folder.
+pub enum ProjectUi {
+    /// The menu: New project, Open folder, then recent projects.
+    Menu { cursor: usize },
+    /// Browsing folders. `new` = choosing where to create a new project.
+    Browse {
+        dir: PathBuf,
+        entries: Vec<PathBuf>,
+        cursor: usize,
+        new: bool,
+    },
+    /// Typing the new project's name; it's created inside `parent`.
+    Name { parent: PathBuf, editor: LineEditor },
+}
+
 #[derive(PartialEq, Eq)]
 enum Screen {
     Splash,
@@ -495,6 +510,12 @@ pub struct App {
     pub hits: std::cell::RefCell<Vec<(Rect, Hit)>>,
     /// The last left click (when, column, row), to spot double-clicks.
     last_click: Option<(Instant, u16, u16)>,
+    /// The active project (working folder), if one is open.
+    pub project: Option<crate::project::Project>,
+    /// Recent projects / last opened, persisted across restarts.
+    pub pstore: crate::project::Store,
+    /// The project manager overlay (`p`), when open.
+    pub project_ui: Option<ProjectUi>,
     /// A background detection pass is in flight.
     detecting: bool,
     /// The console is running a scoop install (so re-detect when it exits).
@@ -597,6 +618,9 @@ impl App {
             agent_icon: std::cell::Cell::new(None),
             hits: std::cell::RefCell::new(Vec::new()),
             last_click: None,
+            project: None,
+            pstore: crate::project::Store::default(),
+            project_ui: None,
             detecting: false,
             installing: false,
             screen: Screen::Splash,
@@ -607,6 +631,12 @@ impl App {
         // start on the first tool in list order, not catalog order
         if let Some(&first) = app.visible().first() {
             app.selected = first;
+        }
+        // reopen the last project, if its folder still exists
+        app.pstore = crate::project::Store::load();
+        if let Some(last) = app.pstore.last.clone().filter(|p| p.is_dir()) {
+            app.cwd = last.clone();
+            app.project = Some(crate::project::Project::open(last));
         }
         app
     }
@@ -865,12 +895,16 @@ impl App {
 
     // ----------------------------------------------------------- challenges
 
-    /// Where run logs go: the active challenge's `logs\`, else the default.
+    /// Where run logs go: the active challenge's `logs\`, else the open
+    /// project's `.winsploit\logs`, else the default.
     fn logs_dir(&self) -> PathBuf {
-        self.challenge
-            .as_ref()
-            .map(Workspace::logs_dir)
-            .unwrap_or_else(crate::runlog::log_dir)
+        if let Some(ws) = self.challenge.as_ref() {
+            return ws.logs_dir();
+        }
+        if let Some(p) = self.project.as_ref() {
+            return p.log_dir();
+        }
+        crate::runlog::log_dir()
     }
 
     /// At start-up: reopen the challenge that was active last time.
@@ -2102,6 +2136,10 @@ impl App {
             self.on_key_agent(key.code);
             return;
         }
+        if self.project_ui.is_some() {
+            self.on_key_project(key);
+            return;
+        }
         if self.show_help {
             // any key closes the overlay
             self.show_help = false;
@@ -2194,7 +2232,13 @@ impl App {
         } else if self.mode == Mode::FolderInput {
             "\u{0}folder".to_string()
         } else {
-            self.tools[self.selected].name.clone()
+            // tool-args history, namespaced per project so each project recalls
+            // its own commands with ↑
+            let name = &self.tools[self.selected].name;
+            match &self.project {
+                Some(p) => format!("{}\u{1}{}", p.path.display(), name),
+                None => name.clone(),
+            }
         }
     }
 
@@ -2271,6 +2315,7 @@ impl App {
                     self.lan_panel = Some(0);
                 }
             }
+            KeyCode::Char('p') => self.open_project_menu(),
             KeyCode::Char('a') => self.start_analysis(),
             KeyCode::Char('A') => {
                 let cursor = agent::Provider::ALL
@@ -2618,6 +2663,11 @@ impl App {
                 return;
             }
         };
+        // {proj} in any argument expands to the open project's path
+        let args: Vec<String> = args
+            .into_iter()
+            .map(|a| crate::project::expand(&a, self.project.as_ref()))
+            .collect();
 
         match tool.launch {
             Launch::Stream => self.run_in_slot(idx, args, src, slot),
@@ -3937,6 +3987,184 @@ impl App {
                 self.status_line = format!("agent suggested an unknown tool: '{}'", s.tool);
             }
         }
+    }
+
+    // ---- projects (`p`) -----------------------------------------------
+
+    fn open_project_menu(&mut self) {
+        self.project_ui = Some(ProjectUi::Menu { cursor: 0 });
+    }
+
+    /// Menu rows: New project, Open folder, then the existing recents.
+    fn menu_len(&self) -> usize {
+        2 + self.pstore.existing_recents().len()
+    }
+
+    /// Open the folder browser, starting at the current project (or home).
+    fn enter_browser(&mut self, new: bool) {
+        let start = self
+            .project
+            .as_ref()
+            .map(|p| p.path.clone())
+            .filter(|p| p.is_dir())
+            .unwrap_or_else(crate::project::home_dir);
+        let entries = crate::project::subdirs(&start);
+        self.project_ui = Some(ProjectUi::Browse {
+            dir: start,
+            entries,
+            cursor: 0,
+            new,
+        });
+    }
+
+    fn on_key_project(&mut self, key: KeyEvent) {
+        let code = key.code;
+        let Some(ui) = self.project_ui.take() else {
+            return;
+        };
+        match ui {
+            ProjectUi::Menu { mut cursor } => {
+                let n = self.menu_len().max(1);
+                match code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        cursor = (cursor + n - 1) % n;
+                        self.project_ui = Some(ProjectUi::Menu { cursor });
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        cursor = (cursor + 1) % n;
+                        self.project_ui = Some(ProjectUi::Menu { cursor });
+                    }
+                    KeyCode::Esc | KeyCode::Char('q') => {} // closed
+                    KeyCode::Enter => match cursor {
+                        0 => self.enter_browser(true),
+                        1 => self.enter_browser(false),
+                        c => {
+                            let recents = self.pstore.existing_recents();
+                            match recents.get(c - 2).cloned() {
+                                Some(path) => self.open_project(path),
+                                None => self.project_ui = Some(ProjectUi::Menu { cursor }),
+                            }
+                        }
+                    },
+                    _ => self.project_ui = Some(ProjectUi::Menu { cursor }),
+                }
+            }
+            ProjectUi::Browse {
+                dir,
+                entries,
+                mut cursor,
+                new,
+            } => {
+                let n = entries.len() + 1; // row 0 = ".." (parent)
+                match code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        cursor = (cursor + n - 1) % n;
+                        self.project_ui = Some(ProjectUi::Browse { dir, entries, cursor, new });
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        cursor = (cursor + 1) % n;
+                        self.project_ui = Some(ProjectUi::Browse { dir, entries, cursor, new });
+                    }
+                    KeyCode::Esc => self.project_ui = Some(ProjectUi::Menu { cursor: 0 }),
+                    KeyCode::Enter => {
+                        if cursor == 0 {
+                            match dir.parent().map(|p| p.to_path_buf()) {
+                                Some(parent) => {
+                                    let entries = crate::project::subdirs(&parent);
+                                    self.project_ui = Some(ProjectUi::Browse {
+                                        dir: parent,
+                                        entries,
+                                        cursor: 0,
+                                        new,
+                                    });
+                                }
+                                None => {
+                                    self.project_ui =
+                                        Some(ProjectUi::Browse { dir, entries, cursor, new })
+                                }
+                            }
+                        } else if let Some(sub) = entries.get(cursor - 1).cloned() {
+                            let entries = crate::project::subdirs(&sub);
+                            self.project_ui = Some(ProjectUi::Browse {
+                                dir: sub,
+                                entries,
+                                cursor: 0,
+                                new,
+                            });
+                        } else {
+                            self.project_ui =
+                                Some(ProjectUi::Browse { dir, entries, cursor, new });
+                        }
+                    }
+                    // o: choose this folder (open it, or name a new project in it)
+                    KeyCode::Char('o') => {
+                        if new {
+                            self.project_ui = Some(ProjectUi::Name {
+                                parent: dir,
+                                editor: LineEditor::default(),
+                            });
+                        } else {
+                            self.open_project(dir);
+                        }
+                    }
+                    _ => self.project_ui = Some(ProjectUi::Browse { dir, entries, cursor, new }),
+                }
+            }
+            ProjectUi::Name { parent, mut editor } => match code {
+                KeyCode::Esc => self.enter_browser(true),
+                KeyCode::Enter => {
+                    let name = editor.text().trim().to_string();
+                    if name.is_empty() {
+                        self.project_ui = Some(ProjectUi::Name { parent, editor });
+                    } else {
+                        let path = parent.join(&name);
+                        match std::fs::create_dir_all(&path) {
+                            Ok(()) => self.open_project(path),
+                            Err(e) => {
+                                self.status_line = format!("couldn't create the project: {e}");
+                            }
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    editor.backspace();
+                    self.project_ui = Some(ProjectUi::Name { parent, editor });
+                }
+                KeyCode::Left => {
+                    editor.left();
+                    self.project_ui = Some(ProjectUi::Name { parent, editor });
+                }
+                KeyCode::Right => {
+                    editor.right();
+                    self.project_ui = Some(ProjectUi::Name { parent, editor });
+                }
+                KeyCode::Char(c) => {
+                    editor.insert(c);
+                    self.project_ui = Some(ProjectUi::Name { parent, editor });
+                }
+                _ => self.project_ui = Some(ProjectUi::Name { parent, editor }),
+            },
+        }
+    }
+
+    /// Open `path` as the active project, record it, and persist.
+    fn open_project(&mut self, path: PathBuf) {
+        let proj = crate::project::Project::open(path.clone());
+        self.pstore.touch(&path);
+        if let Err(e) = self.pstore.save() {
+            self.console
+                .push(format!("[err] couldn't save the project list: {e}"));
+        }
+        self.console.push(format!(
+            ":: project '{}' — tools now run in {}",
+            proj.name,
+            proj.path.display()
+        ));
+        self.status_line = format!("project: {} (tools run here · {{proj}} = its path)", proj.name);
+        // tools run in the project folder (reuses the cwd the runner already uses)
+        self.cwd = proj.path.clone();
+        self.project = Some(proj);
+        self.project_ui = None;
     }
 
     /// `c`: stop the tool in terminal `pos`; its output stays.

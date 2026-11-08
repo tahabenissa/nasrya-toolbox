@@ -22,6 +22,7 @@ mod flags;
 mod folder;
 mod hashid;
 mod install;
+mod project;
 mod recipe;
 mod registry;
 mod runlog;

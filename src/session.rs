@@ -125,7 +125,7 @@ impl Session {
 
     /// Start this run's log file and say where it is. `source` records
     /// where the run was started from (`terminal` or `web`).
-    /// `dir` is the active challenge's `logs\` folder, or the default one.
+    /// `dir` is the active project's / challenge's `logs\` folder, or the default.
     pub fn open_log(&mut self, dir: &std::path::Path, name: &str, command: &str, source: &str) {
         match RunLog::create(dir, name, command, source) {
             Ok(log) => {
