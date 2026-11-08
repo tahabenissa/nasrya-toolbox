@@ -664,6 +664,13 @@ New tools are the easiest place to start: add a `tools.yaml` entry (and a `bucke
 nobody packages the tool), run `cargo test`, and open a PR. Please only add tools that really
 work natively on Windows, and use `note:` to document any caveats.
 
+## Reporting a vulnerability
+
+Please report security issues privately through
+[GitHub security advisories](https://github.com/tahabenissa/nasrya-toolbox/security/advisories/new)
+instead of opening a public issue. Public issues and PRs are visible to everyone, which makes
+them the wrong place for an unpatched vulnerability.
+
 ## Credits & prior art
 
 Inspired by the native-toolbox idea behind **PentestBox**, the provisioning model of
