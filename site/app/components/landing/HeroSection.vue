@@ -4,7 +4,7 @@ const demo = withBase('demo/');
 const title = ref<HTMLElement>();
 const tag = ref<HTMLElement>();
 const copied = ref(false);
-const CLONE = 'git clone https://github.com/tahabenissa/nasrya-toolbox';
+const CLONE = 'git clone https://github.com/tahabenissa/winsploit';
 
 async function copy() {
   try {

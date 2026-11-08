@@ -1,6 +1,6 @@
 // Winsploit website: landing page, docs and the live web-view demo.
 // Static: `npm run generate` writes .output/public, deployed to GitHub Pages.
-// The base path comes from NUXT_APP_BASE_URL (/nasrya-toolbox/ on Pages).
+// The base path comes from NUXT_APP_BASE_URL (/winsploit/ on Pages).
 export default defineNuxtConfig({
   compatibilityDate: '2026-10-01',
   devtools: { enabled: false },

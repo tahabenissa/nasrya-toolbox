@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     # the build and the link check must agree on the Pages base path
     env:
-      NUXT_APP_BASE_URL: /nasrya-toolbox/
+      NUXT_APP_BASE_URL: /winsploit/
     defaults:
       run:
         working-directory: site

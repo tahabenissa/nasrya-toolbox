@@ -8,7 +8,7 @@ const { pages, groups } = await useDocsNav();
 const at = computed(() => pages.value.findIndex((p) => p.path === route.path));
 const prev = computed(() => (at.value > 0 ? pages.value[at.value - 1] : null));
 const next = computed(() => (at.value >= 0 && at.value < pages.value.length - 1 ? pages.value[at.value + 1] : null));
-const editUrl = computed(() => `https://github.com/tahabenissa/nasrya-toolbox/edit/main/site/content/${page.value?.stem}.md`);
+const editUrl = computed(() => `https://github.com/tahabenissa/winsploit/edit/main/site/content/${page.value?.stem}.md`);
 
 useSeoMeta({
   title: () => `${page.value?.title} · Winsploit docs`,

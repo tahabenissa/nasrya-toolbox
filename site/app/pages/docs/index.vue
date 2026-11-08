@@ -14,8 +14,8 @@ const tabs = [
       ['', 'Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression'],
       ['', ''],
       ['c', '# 2. Build Winsploit (Rust 1.87+)'],
-      ['', 'git clone https://github.com/tahabenissa/nasrya-toolbox'],
-      ['', 'cd nasrya-toolbox'],
+      ['', 'git clone https://github.com/tahabenissa/winsploit'],
+      ['', 'cd winsploit'],
       ['', 'cargo build --release'],
       ['', ''],
       ['c', '# 3. Launch the dashboard'],
@@ -190,7 +190,7 @@ const href = (to: string) => (to === 'demo' ? demo : to);
           <Card title="Architecture" icon="⌘" to="/docs/project/architecture">Event loop, sessions, detection, the web hub.</Card>
           <Card title="Contributing" icon="+" to="/docs/project/contributing">Add a tool, run the tests, open a PR.</Card>
           <Card title="Live demo" icon="▶" :to="demo.startsWith('http') ? demo : undefined"><a :href="demo">Try the web view in your browser →</a></Card>
-          <Card title="GitHub" icon="⌥" to="https://github.com/tahabenissa/nasrya-toolbox">Source, issues and releases.</Card>
+          <Card title="GitHub" icon="⌥" to="https://github.com/tahabenissa/winsploit">Source, issues and releases.</Card>
         </CardGroup>
       </section>
     </main>
