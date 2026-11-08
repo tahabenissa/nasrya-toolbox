@@ -114,6 +114,8 @@ pub struct Settings {
     /// Per-provider model overrides, keyed by `Provider::short()`. An entry
     /// here replaces that provider's default model; absent = use the default.
     pub agent_models: std::collections::BTreeMap<String, String>,
+    /// Check GitHub once a day for a newer release (toast only, never downloads).
+    pub update_check: bool,
 }
 
 impl Default for Settings {
@@ -128,6 +130,7 @@ impl Default for Settings {
             tour_done: false,
             agent: crate::agent::Provider::default(),
             agent_models: std::collections::BTreeMap::new(),
+            update_check: true,
         }
     }
 }

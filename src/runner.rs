@@ -27,6 +27,8 @@ pub enum AppEvent {
     Lan(crate::web::LanEvent),
     /// The agent finished analysing the output (Ok analysis, or an error message).
     Agent(Result<crate::agent::Analysis, String>),
+    /// A newer Winsploit release is available (its tag, e.g. "v0.3.0").
+    Update(String),
 }
 
 /// Build the command that runs a tool: `program` resolved the way Windows
@@ -393,7 +395,8 @@ mod tests {
                 AppEvent::Detected(_)
                 | AppEvent::Web(..)
                 | AppEvent::Lan(_)
-                | AppEvent::Agent(_) => {}
+                | AppEvent::Agent(_)
+                | AppEvent::Update(_) => {}
             }
         }
         assert_eq!(lines, ["apple", "pear"]);
@@ -430,7 +433,8 @@ mod tests {
                 AppEvent::Detected(_)
                 | AppEvent::Web(..)
                 | AppEvent::Lan(_)
-                | AppEvent::Agent(_) => {}
+                | AppEvent::Agent(_)
+                | AppEvent::Update(_) => {}
             }
         }
         let _ = std::fs::remove_dir_all(&dir);

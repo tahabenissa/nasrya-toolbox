@@ -673,6 +673,10 @@ impl App {
 
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         self.detect_all(false);
+        // once a day, best-effort: is there a newer release? (toast only)
+        if self.settings.update_check {
+            crate::update::check(self.tx.clone());
+        }
         // a crashed run may have left its firewall rule open
         if let Some(port) = firewall::leftover() {
             self.fw_port = Some(port);
@@ -1694,6 +1698,15 @@ impl App {
             AppEvent::Web(action, caller) => self.on_web_action(action, caller),
             AppEvent::Lan(ev) => self.on_lan_event(ev),
             AppEvent::Agent(res) => self.on_agent_result(res),
+            AppEvent::Update(tag) => {
+                self.toast(
+                    ToastKind::Info,
+                    format!(
+                        "Winsploit {tag} is available (you have {}) — see the releases page to update",
+                        crate::update::current_version()
+                    ),
+                );
+            }
         }
     }
 
