@@ -35,6 +35,7 @@ mod shortcut;
 mod theme;
 mod tls;
 mod ui;
+mod update;
 mod web;
 mod workspace;
 
