@@ -23,7 +23,7 @@ No WSL. No VM. No guesswork about what actually works on Windows.
 ![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 ![rust](https://img.shields.io/badge/rust-1.87%2B-B7410E)
 ![tools](https://img.shields.io/badge/catalog-45%20tools-8A2BE2)
-![tests](https://img.shields.io/badge/tests-169%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-213%20passing-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [Quick start](#quick-start) •
@@ -112,10 +112,10 @@ Pick a tool with `↑/↓` (or `/` to filter), press `i` to install it and `Ente
 `?` any time to see every key.
 
 > [!NOTE]
-> **Prebuilt binaries:** tagging `v*` publishes a Windows x64 zip (`winsploit.exe` + `tools.yaml`) on
-> the [Releases](https://github.com/tahabenissa/winsploit/releases) page. The current
-> `v0.1.0` release **predates** everything listed under [What's new](#whats-new), so build from
-> source for now. The binary is unsigned, so Smart App Control may ask you to allow it.
+> **Prebuilt binaries:** every `v*` tag publishes a Windows x64 zip (`winsploit.exe` + `tools.yaml`)
+> and an installer on the [Releases](https://github.com/tahabenissa/winsploit/releases) page.
+> **`v0.3.0`** is current and includes everything under [What's new](#whats-new). The binary is
+> unsigned, so Smart App Control / SmartScreen may ask you to allow it — check it against `SHA256SUMS`.
 
 ## Features
 
@@ -175,6 +175,14 @@ session**, the way Claude Code works.
   waits. You choose **Watch only**, **Full control** or **Deny** in the terminal or in your own
   browser tab. `L` shows the key and every guest, makes a new key, switches roles and removes
   people. Runs a guest starts are labelled with their name and IP in the output and the run log.
+
+### An AI agent in the loop
+- Press **`a`** and an AI reads the focused terminal's output and suggests the next steps —
+  **catalog tools with ready-to-run commands you confirm before they run**. The agent never runs a
+  shell itself: suggestions go through the same install / conflict / arg checks as any manual run.
+- **`A`** picks the provider: the installed **Claude CLI** (reuses your login, no key), or
+  **Gemini / DeepSeek / OpenAI** via their API, or a local **Ollama** model — each with an optional
+  per-provider model override. Keys are read from the environment; nothing is sent until you press `a`.
 
 ### Config-driven, honest by design
 - Every tool is a **YAML entry**, so you add one without touching code.
@@ -245,6 +253,8 @@ winsploit --version, -V   show version
 | `f` · `n` · `N` | Find in output · older match · newer match |
 | `c` | Cancel the running process (kills the whole tree) |
 | `h` | Identify a hash (built in, offline) |
+| `a` · `A` | AI agent: read the output and suggest next steps · choose the provider / model |
+| `p` | Projects: create / open a working folder, with recents (reopened on startup) |
 | `d` | Working folder: where tools run, like `cd` · `Tab` completes · `..` `~` `-` work |
 | `C` | Challenges: create, switch, set the target / flag format, add files, open notes |
 | `F` | Flags caught in tool output (`Enter` copies one) |
@@ -578,7 +588,7 @@ flowchart LR
 ### Development
 
 ```powershell
-cargo test                      # 169 unit tests
+cargo test                      # 213 unit tests
 cargo fmt --all -- --check
 cargo clippy --all-targets
 ```
@@ -599,7 +609,7 @@ node site/scripts/readme-banner.mjs   # regenerate .github/banner.svg (the READM
 ## What's new
 
 <details open>
-<summary><b>Unreleased (since v0.1.0)</b></summary>
+<summary><b>v0.3.0 (latest) — since v0.1.0</b></summary>
 
 **Appearance (`t`)**
 - *Winsploit Frost*, the default theme: the web view's palette and the Iso cube logo's colours.
@@ -639,6 +649,15 @@ node site/scripts/readme-banner.mjs   # regenerate .github/banner.svg (the READM
 - Built-in hash identifier (`h` / `winsploit hashid`).
 - Tool-name column sized to the longest name.
 
+**AI agent, projects & sharing**
+- **AI agent (`a`)** reads a terminal's output and suggests next steps as catalog-tool commands you
+  confirm; **provider picker (`A`)** for the Claude CLI, Gemini, DeepSeek, OpenAI or a local Ollama
+  model, with per-provider model overrides.
+- **Projects (`p`)** — a working folder you create or open, with recents, reopened on startup.
+- **Web view + LAN sharing** of the same live session, **Windows Sandbox** runs (`S`), **CTF
+  workspaces, recipes and a flag catcher**, and a **working folder** (`d`) you move like `cd`.
+- **Startup update check:** a toast when a newer release is out (disable with `update-check: false`).
+
 **Security and hygiene**
 - Never loads `tools.yaml` from the current directory implicitly.
 - Quote-aware argument splitting.
@@ -656,7 +675,8 @@ node site/scripts/readme-banner.mjs   # regenerate .github/banner.svg (the READM
 - [ ] Scope enforcement before every launch (block, or override with a reason)
 - [ ] Artifact collection (files a tool writes, e.g. `-oX` / `-o`, kept next to the run log)
 - [ ] One-shot report generation (Markdown / HTML)
-- [ ] New tagged release with prebuilt binary
+- [x] Tagged releases with a prebuilt binary + installer (latest: **v0.3.0**)
+- [x] AI agent (analyse output → suggested commands), multi-provider · projects · web view + LAN sharing · Windows Sandbox runs
 
 ## Contributing
 
