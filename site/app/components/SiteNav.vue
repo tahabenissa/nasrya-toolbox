@@ -14,6 +14,17 @@ const links = [
   { to: '/docs', label: 'Docs' },
 ];
 
+// Overview in other languages (the translated READMEs). Full on-site docs i18n
+// is a separate effort; this surfaces the translations that exist today.
+const langs = [
+  { label: 'English', href: `${REPO}#readme` },
+  { label: 'Français', href: `${REPO}/blob/main/README.fr.md` },
+  { label: 'Español', href: `${REPO}/blob/main/README.es.md` },
+  { label: '中文', href: `${REPO}/blob/main/README.zh.md` },
+  { label: 'العربية', href: `${REPO}/blob/main/README.ar.md` },
+  { label: 'Русский', href: `${REPO}/blob/main/README.ru.md` },
+];
+
 let last = 0;
 function onScroll() {
   const y = window.scrollY;
@@ -61,6 +72,17 @@ watch(() => route.fullPath, () => (open.value = false));
       </nav>
 
       <div class="nav__actions">
+        <details class="nav__lang">
+          <summary aria-label="Language">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
+            </svg>
+            <i class="nav__caret" />
+          </summary>
+          <ul class="nav__langmenu">
+            <li v-for="g in langs" :key="g.label"><a :href="g.href" target="_blank" rel="noopener">{{ g.label }}</a></li>
+          </ul>
+        </details>
         <a :href="REPO" class="nav__gh" target="_blank" rel="noopener">
           <GithubIcon />
           <span>GitHub</span>
@@ -78,6 +100,9 @@ watch(() => route.fullPath, () => (open.value = false));
       <NuxtLink v-for="(l, i) in links" :key="l.to" :to="l.to" :style="{ '--i': i }">{{ l.label }}</NuxtLink>
       <a :href="demo" :style="{ '--i': links.length }">Live demo</a>
       <a :href="REPO" :style="{ '--i': links.length + 1 }">GitHub</a>
+      <div class="nav__sheetlangs" :style="{ '--i': links.length + 2 }">
+        <a v-for="g in langs" :key="g.label" :href="g.href" target="_blank" rel="noopener">{{ g.label }}</a>
+      </div>
     </div>
   </header>
 </template>
@@ -116,6 +141,31 @@ watch(() => route.fullPath, () => (open.value = false));
 }
 .nav__gh:hover { border-color: var(--line-strong); color: var(--text); }
 .nav__stars { font-weight: 500; color: var(--accent); }
+
+/* language switcher: native <details> dropdown */
+.nav__lang { position: relative; }
+.nav__lang > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--text-2); transition: border-color .4s var(--ease-out), color .4s var(--ease-out);
+}
+.nav__lang > summary::-webkit-details-marker { display: none; }
+.nav__lang[open] > summary, .nav__lang > summary:hover { border-color: var(--line-strong); color: var(--text); }
+.nav__caret { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-1px); }
+.nav__langmenu {
+  position: absolute; top: calc(100% + 8px); right: 0; min-width: 150px; z-index: 60;
+  padding: 6px; margin: 0; list-style: none;
+  background: color-mix(in srgb, var(--dg-900) 94%, transparent);
+  backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.nav__langmenu a {
+  display: block; padding: 8px 12px; border-radius: calc(var(--radius) - 2px);
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-2);
+  transition: background-color .3s var(--ease-out), color .3s var(--ease-out);
+}
+.nav__langmenu a:hover { background: var(--surface-3); color: var(--text); }
+.nav__sheetlangs { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
 .nav__burger { display: none; width: 40px; height: 40px; position: relative; }
 .nav__burger i { position: absolute; left: 10px; right: 10px; height: 1.5px; background: var(--text); transition: transform .5s var(--ease-out); }
 .nav__burger i:first-child { top: 15px; }
@@ -139,6 +189,15 @@ watch(() => route.fullPath, () => (open.value = false));
     opacity: 0; transform: translateY(20px); transition: opacity .6s var(--ease-out), transform .6s var(--ease-out);
   }
   .is-open .nav__sheet a { opacity: 1; transform: none; transition-delay: calc(.15s + var(--i) * .05s); }
+  .nav__sheetlangs {
+    opacity: 0; transform: translateY(20px); margin-top: 8px;
+    transition: opacity .6s var(--ease-out), transform .6s var(--ease-out);
+  }
+  .is-open .nav__sheetlangs { opacity: 1; transform: none; transition-delay: calc(.15s + var(--i) * .05s); }
+  .nav__sheetlangs a {
+    font-size: 15px; letter-spacing: .04em; padding: 4px 0; border-bottom: none;
+    opacity: 1; transform: none; color: var(--text-2);
+  }
 }
 @media (max-width: 520px) { .nav__cta { display: none; } }
 </style>
