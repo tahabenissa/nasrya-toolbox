@@ -1,5 +1,7 @@
 <div align="center">
 
+**English** · [Français](README.fr.md) · [Español](README.es.md) · [中文](README.zh.md) · [العربية](README.ar.md) · [Русский](README.ru.md)
+
 <a href="https://tahabenissa.github.io/winsploit/">
   <img src=".github/banner.svg" alt="Winsploit" width="720">
 </a>
