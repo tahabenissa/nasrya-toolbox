@@ -122,9 +122,9 @@ pub fn problems(args: &str) -> Vec<String> {
 
 /// `v` as exactly one argument for args::split.
 pub fn quote(v: &str) -> String {
-    // a trailing backslash would turn the closing quote into a literal one
-    let v = v.trim().trim_end_matches('\\');
-    format!("\"{}\"", v.replace('"', "\\\""))
+    // a trailing backslash is dropped on purpose: `{out}` is usually a folder
+    // written `...\out\`, and recipes append `\name` right after it
+    crate::args::quote(v.trim().trim_end_matches('\\'))
 }
 
 /// Fill every placeholder, or say which values are missing.
@@ -222,5 +222,110 @@ mod tests {
         assert!(problems(r#"-w "{app:seclists-lite}\x" '{scoop_app}'"#).is_empty());
         assert_eq!(problems(r#"-u "{target}""#).len(), 1);
         assert!(problems("-u {targt}")[0].contains("unknown placeholder {targt}"));
+    }
+
+    // ---- property / fuzz tests (#119) -----------------------------------
+
+    use crate::fuzz::{nasty_string, Rng, CORPUS};
+
+    /// What `quote` promises: the value, trimmed and without trailing
+    /// backslashes (they would eat the closing quote), as ONE argument.
+    fn expected(v: &str) -> String {
+        v.trim().trim_end_matches('\\').to_string()
+    }
+
+    #[test]
+    fn quote_is_always_exactly_one_argument_with_the_value_intact() {
+        for v in CORPUS {
+            let q = quote(v);
+            assert_eq!(
+                args::split(&q),
+                Ok(vec![expected(v)]),
+                "{v:?} quoted as {q:?}"
+            );
+        }
+        let mut rng = Rng::new(0x119);
+        for case in 0..5000 {
+            let v = nasty_string(&mut rng, 14);
+            let q = quote(&v);
+            assert_eq!(
+                args::split(&q),
+                Ok(vec![expected(&v)]),
+                "case {case}: {v:?} quoted as {q:?}"
+            );
+        }
+    }
+
+    /// The headline property: however hostile the values, a filled recipe
+    /// has exactly the arguments the recipe wrote, and each value is one of
+    /// them. Nothing a value contains can add, drop or move a flag.
+    #[test]
+    fn filled_recipe_never_gains_or_loses_arguments() {
+        let template = r"-sV --max-retries 2 {target} -oN {out}\nmap.txt -d {file} -w {wordlist}";
+        let mut rng = Rng::new(0xF111);
+        let hostile = |rng: &mut Rng| loop {
+            let v = if rng.below(3) == 0 {
+                rng.pick(CORPUS).to_string()
+            } else {
+                nasty_string(rng, 14)
+            };
+            // blank values count as "not set" and are rejected by fill()
+            if !v.trim().is_empty() {
+                break v;
+            }
+        };
+        for case in 0..4000 {
+            let vals = Values {
+                target: Some(hostile(&mut rng)),
+                file: Some(hostile(&mut rng)),
+                out: Some(hostile(&mut rng)),
+                wordlist: Some(hostile(&mut rng)),
+            };
+            let filled = fill(template, &vals).unwrap();
+            let argv = args::split(&filled)
+                .unwrap_or_else(|e| panic!("case {case}: {vals:?} gave {filled:?}: {e}"));
+            let want = [
+                "-sV".to_string(),
+                "--max-retries".to_string(),
+                "2".to_string(),
+                expected(vals.target.as_deref().unwrap()),
+                "-oN".to_string(),
+                format!("{}\\nmap.txt", expected(vals.out.as_deref().unwrap())),
+                "-d".to_string(),
+                expected(vals.file.as_deref().unwrap()),
+                "-w".to_string(),
+                expected(vals.wordlist.as_deref().unwrap()),
+            ];
+            assert_eq!(argv, want, "case {case}: {vals:?} gave {filled:?}");
+        }
+    }
+
+    /// A value that looks like a placeholder is data, not a second round of
+    /// expansion.
+    #[test]
+    fn values_that_look_like_placeholders_stay_literal() {
+        let vals = Values {
+            target: Some("{file}".into()),
+            file: Some("{target}".into()),
+            out: Some("{out}".into()),
+            wordlist: Some("{wordlist}".into()),
+        };
+        let argv = args::split(&fill("{target} {file} {out} {wordlist}", &vals).unwrap()).unwrap();
+        assert_eq!(argv, ["{file}", "{target}", "{out}", "{wordlist}"]);
+    }
+
+    /// Slots written into a recipe that are NOT a known placeholder are left
+    /// alone, and a value is never searched for placeholders afterwards.
+    #[test]
+    fn unknown_braces_and_random_templates_never_panic() {
+        let mut rng = Rng::new(0xB4AC);
+        let vals = vals();
+        for _ in 0..3000 {
+            let template = nasty_string(&mut rng, 24);
+            let _ = slots(&template);
+            let _ = problems(&template);
+            let _ = fill_partial(&template, &vals);
+            let _ = fill(&template, &vals);
+        }
     }
 }

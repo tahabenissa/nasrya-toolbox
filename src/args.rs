@@ -57,17 +57,40 @@ pub fn split(line: &str) -> Result<Vec<String>, String> {
     Ok(args)
 }
 
+/// `arg` as exactly one argument for [`split`]: always double-quoted, so
+/// `split(&quote(a)) == [a]` for every `a`.
+///
+/// Both quote characters are escaped: `\'` means a literal `'` everywhere
+/// in this grammar (even inside double quotes), so a literal backslash
+/// followed by a quote must be written `\\'`. Trailing backslashes can't
+/// sit before the closing quote (`\"` would be an escaped quote), so they
+/// go after it: `"C:\My Dir"\`, which reads as `C:\My Dir\`.
+pub fn quote(arg: &str) -> String {
+    let body = arg.trim_end_matches('\\');
+    let tail = &arg[body.len()..];
+    let mut out = String::with_capacity(arg.len() + 4);
+    out.push('"');
+    for c in body.chars() {
+        if matches!(c, '"' | '\'') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    out.push_str(tail);
+    out
+}
+
 /// Render an argv back into a line for display, quoting only where needed.
+/// `split(&join(argv))` gives `argv` back.
 pub fn join(args: &[String]) -> String {
     args.iter()
         .map(|a| {
-            if a.is_empty() {
-                "\"\"".to_string()
-            } else if a
-                .chars()
-                .any(|c| c.is_whitespace() || c == '"' || c == '\'')
+            if a.is_empty()
+                || a.chars()
+                    .any(|c| c.is_whitespace() || c == '"' || c == '\'')
             {
-                format!("\"{}\"", a.replace('"', "\\\""))
+                quote(a)
             } else {
                 a.clone()
             }
@@ -159,6 +182,97 @@ mod tests {
         ] {
             let argv = s(line);
             assert_eq!(s(&join(&argv)), argv, "round-trip of {line}");
+        }
+    }
+
+    // ---- property / fuzz tests (#119) -----------------------------------
+
+    use crate::fuzz::{nasty_string, Rng, CORPUS};
+
+    /// `join` is what the user sees (and what `netsh` shows), so what it
+    /// prints must split back into the very same argv.
+    #[test]
+    fn every_corpus_string_survives_join_then_split() {
+        for v in CORPUS {
+            let argv = vec![(*v).to_string()];
+            let line = join(&argv);
+            assert_eq!(split(&line), Ok(argv), "{v:?} joined as {line:?}");
+        }
+    }
+
+    #[test]
+    fn random_argvs_survive_join_then_split() {
+        let mut rng = Rng::new(0x119);
+        for case in 0..3000 {
+            let n = 1 + rng.below(4);
+            let argv: Vec<String> = (0..n).map(|_| nasty_string(&mut rng, 10)).collect();
+            let line = join(&argv);
+            assert_eq!(
+                split(&line).as_ref(),
+                Ok(&argv),
+                "case {case}: {argv:?} joined as {line:?}"
+            );
+        }
+    }
+
+    /// The splitter itself: never panics, and whatever it accepts is stable
+    /// (splitting what `join` prints gives the same argv back).
+    #[test]
+    fn split_never_panics_and_is_stable_on_random_lines() {
+        let mut rng = Rng::new(0x64);
+        for case in 0..5000 {
+            let line = nasty_string(&mut rng, 24);
+            if let Ok(argv) = split(&line) {
+                let again = split(&join(&argv));
+                assert_eq!(again.as_ref(), Ok(&argv), "case {case}: line {line:?}");
+            }
+        }
+        for line in CORPUS {
+            let _ = split(line); // an error is fine, a panic is not
+        }
+    }
+
+    /// Regressions the fuzzing found: both used to corrupt the value.
+    #[test]
+    fn backslash_before_a_quote_and_trailing_backslashes_round_trip() {
+        // `\'` used to lose its backslash (split reads `\'` as an escaped quote)
+        assert_eq!(quote(r"\'"), r#""\\'""#);
+        assert_eq!(s(&quote(r"\'")), [r"\'"]);
+        // a spaced path with a trailing backslash used to print an
+        // unterminated quote
+        assert_eq!(quote(r"C:\My Dir\"), r#""C:\My Dir"\"#);
+        assert_eq!(s(&quote(r"C:\My Dir\")), [r"C:\My Dir\"]);
+        assert_eq!(s(&quote(r"a b\\")), [r"a b\\"]);
+        let argv = vec![r"C:\My Dir\".to_string(), "-v".to_string()];
+        assert_eq!(s(&join(&argv)), argv);
+        // plain arguments are still printed bare
+        assert_eq!(join(&["-sV".into(), r"C:\x\".into()]), r"-sV C:\x\");
+    }
+
+    #[test]
+    fn quote_is_always_one_argument() {
+        for v in CORPUS {
+            assert_eq!(split(&quote(v)), Ok(vec![(*v).to_string()]), "{v:?}");
+        }
+        let mut rng = Rng::new(0x71);
+        for _ in 0..3000 {
+            let v = nasty_string(&mut rng, 12);
+            assert_eq!(split(&quote(&v)), Ok(vec![v.clone()]), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn split_only_breaks_on_unquoted_whitespace() {
+        // no quote and no backslash in the text: arguments are exactly the
+        // whitespace-separated words
+        let mut rng = Rng::new(3);
+        for _ in 0..2000 {
+            let line: String = nasty_string(&mut rng, 20)
+                .chars()
+                .filter(|c| !matches!(c, '"' | '\'' | '\\'))
+                .collect();
+            let want: Vec<String> = line.split_whitespace().map(str::to_string).collect();
+            assert_eq!(split(&line).unwrap(), want, "line {line:?}");
         }
     }
 }

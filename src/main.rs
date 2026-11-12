@@ -457,3 +457,5 @@ CATALOG (tools.yaml) is looked up in this order:\n\
 
 #[cfg(test)]
 mod bucket_tests;
+#[cfg(test)]
+mod fuzz;
