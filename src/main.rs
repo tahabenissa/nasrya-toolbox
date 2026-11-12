@@ -13,6 +13,7 @@ mod agent;
 mod app;
 mod args;
 mod banner;
+mod chat;
 mod detect;
 mod editor;
 mod envpath;

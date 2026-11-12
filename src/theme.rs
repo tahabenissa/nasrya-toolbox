@@ -121,6 +121,10 @@ pub struct Settings {
     /// How much of a run is kept out of the pane's `$` line and the run
     /// log: `off`, `commands` (default) or `all` (#70, see redact.rs).
     pub redact: crate::redact::Level,
+    /// The side chat (`T`) runs the tool the AI picked at once instead of
+    /// waiting for Enter. Off by default: tool output is untrusted text that
+    /// reaches the AI, and a hostile target could try to steer it.
+    pub chat_autorun: bool,
 }
 
 impl Default for Settings {
@@ -138,6 +142,7 @@ impl Default for Settings {
             update_check: true,
             notify_sound: false,
             redact: crate::redact::Level::default(),
+            chat_autorun: false,
         }
     }
 }

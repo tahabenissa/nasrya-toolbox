@@ -7,6 +7,8 @@
 //!     through `curl` with the key from an env var
 //!   - Ollama   — a local OpenAI-compatible server (http://localhost:11434)
 //!
+//! The same providers serve the side chat (`T`, see chat.rs), through `chat`.
+//!
 //! Whichever provider, the AI is the brain only — it gets no tool execution.
 //! It returns suggestions that each name a winsploit catalog tool and its args;
 //! winsploit runs a chosen one through its normal launch path (install /
@@ -234,14 +236,20 @@ struct Envelope {
     is_error: bool,
 }
 
-/// Parse a Claude Code JSON-envelope stdout into an `Analysis`.
-pub fn parse_envelope(stdout: &str) -> Result<Analysis, String> {
+/// The model's text out of a Claude Code JSON-envelope stdout.
+fn envelope_text(stdout: &str) -> Result<String, String> {
     let env: Envelope = serde_json::from_str(stdout.trim())
         .map_err(|e| format!("couldn't read claude's response ({e})"))?;
     if env.is_error {
         return Err(format!("claude reported an error: {}", env.result.trim()));
     }
-    analysis_from_text(&env.result)
+    Ok(env.result)
+}
+
+/// Parse a Claude Code JSON-envelope stdout into an `Analysis`.
+#[cfg(test)]
+pub fn parse_envelope(stdout: &str) -> Result<Analysis, String> {
+    analysis_from_text(&envelope_text(stdout)?)
 }
 
 // ---- OpenAI-compatible chat response -----------------------------------
@@ -280,8 +288,8 @@ pub fn build_http_body(model: &str, prompt: &str) -> String {
     .to_string()
 }
 
-/// Parse an OpenAI-compatible chat response into an `Analysis`.
-pub fn parse_chat(stdout: &str) -> Result<Analysis, String> {
+/// The model's text out of an OpenAI-compatible chat response.
+fn chat_text(stdout: &str) -> Result<String, String> {
     let resp: ChatResponse = serde_json::from_str(stdout.trim()).map_err(|e| {
         format!(
             "couldn't read the AI's response ({e}) — raw: {:.200}",
@@ -299,7 +307,13 @@ pub fn parse_chat(stdout: &str) -> Result<Analysis, String> {
     if content.is_empty() {
         return Err("the API returned no content".into());
     }
-    analysis_from_text(content)
+    Ok(content.to_string())
+}
+
+/// Parse an OpenAI-compatible chat response into an `Analysis`.
+#[cfg(test)]
+pub fn parse_chat(stdout: &str) -> Result<Analysis, String> {
+    analysis_from_text(&chat_text(stdout)?)
 }
 
 // ---- running the chosen provider ---------------------------------------
@@ -316,26 +330,99 @@ pub fn analyze(
 ) {
     thread::spawn(move || {
         let prompt = build_prompt(&tool_names, &ran, &output_tail);
-        let result = match provider.http() {
-            None => run_claude(&model, &prompt),
-            Some((base_url, key_env)) => run_http(base_url, &model, key_env, &prompt),
-        };
+        let result = ask_text(provider, &model, &prompt).and_then(|t| analysis_from_text(&t));
         let _ = tx.send(AppEvent::Agent(result));
     });
 }
 
-/// The `claude` CLI in print mode, returning its JSON envelope.
-fn run_claude(model: &str, prompt: &str) -> Result<Analysis, String> {
+/// Send `prompt` to the chat panel's provider on a background thread; the
+/// model's raw text arrives as `AppEvent::Chat { req, .. }`.
+pub fn chat(provider: Provider, model: String, prompt: String, req: u64, tx: Sender<AppEvent>) {
+    thread::spawn(move || {
+        let result = ask_text(provider, &model, &prompt);
+        let _ = tx.send(AppEvent::Chat { req, result });
+    });
+}
+
+/// One blocking round trip: `prompt` in, the model's text out.
+fn ask_text(provider: Provider, model: &str, prompt: &str) -> Result<String, String> {
+    match provider.http() {
+        None => run_claude(model, prompt),
+        Some((base_url, key_env)) => run_http(base_url, model, key_env, prompt),
+    }
+}
+
+/// The system prompt the `claude` CLI gets instead of its own coding-agent
+/// one (which is ~49k tokens of overhead on every call). No quotes or shell
+/// characters: it travels as one argument, even through a `.cmd` shim.
+const CLAUDE_SYSTEM_PROMPT: &str = "You are a JSON-only assistant embedded in a security tool \
+launcher. You have no tools. Follow the output format you are given exactly.";
+
+/// A scratch folder for the `claude` CLI to run in, holding a settings file
+/// that turns hooks off. Returns the settings file's path.
+fn claude_scratch() -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let dir = std::env::temp_dir().join("winsploit-ai");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("couldn't make {}: {e}", dir.display()))?;
+    let settings = dir.join("settings.json");
+    std::fs::write(&settings, r#"{"disableAllHooks": true}"#)
+        .map_err(|e| format!("couldn't write {}: {e}", settings.display()))?;
+    Ok((dir, settings))
+}
+
+/// The arguments for one isolated `claude` call.
+///
+/// The prompt carries a tool's output, which is untrusted text, and the CLI
+/// inherits the user's own Claude Code setup: their permission mode, hooks
+/// (a Stop hook once hijacked a request and edited a file), MCP servers and
+/// memory files. So the call gets no tools at all (`--tools ""`), no MCP
+/// servers, no hooks, no slash commands and no session record, and runs in a
+/// scratch folder. `--bare` would skip more, but it never reads the login.
+fn claude_args(model: &str, settings: &std::path::Path) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "-p",
+        "--output-format",
+        "json",
+        "--model",
+        model,
+        "--tools",
+        "",
+        "--strict-mcp-config",
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--system-prompt",
+        CLAUDE_SYSTEM_PROMPT,
+        "--settings",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    args.push(settings.display().to_string());
+    args
+}
+
+/// The `claude` CLI in isolated print mode, returning the text of its JSON envelope.
+fn run_claude(model: &str, prompt: &str) -> Result<String, String> {
     let path =
         detect::resolve("claude").ok_or_else(|| "the claude CLI isn't on PATH".to_string())?;
+    let (dir, settings) = claude_scratch()?;
     let out = feed(
-        Command::new(path).args(["-p", "--output-format", "json", "--model", model]),
+        Command::new(path)
+            .args(claude_args(model, &settings))
+            .current_dir(dir),
         prompt,
     )?;
     if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).to_lowercase();
+        // fail closed: never fall back to a call without the isolation flags
+        if err.contains("unknown option") || err.contains("unknown argument") {
+            return Err("your claude CLI is too old for winsploit's isolated mode \
+                        (it needs --tools); update it with `claude update`, or press A and \
+                        pick another provider"
+                .into());
+        }
         return Err(exit_message("claude", &out));
     }
-    parse_envelope(&String::from_utf8_lossy(&out.stdout))
+    envelope_text(&String::from_utf8_lossy(&out.stdout))
 }
 
 fn run_http(
@@ -343,7 +430,7 @@ fn run_http(
     model: &str,
     key_env: Option<&str>,
     prompt: &str,
-) -> Result<Analysis, String> {
+) -> Result<String, String> {
     let curl = detect::resolve("curl").ok_or_else(|| "curl isn't on PATH".to_string())?;
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let body = build_http_body(model, prompt);
@@ -367,7 +454,7 @@ fn run_http(
     if !out.status.success() {
         return Err(exit_message("curl", &out));
     }
-    parse_chat(&String::from_utf8_lossy(&out.stdout))
+    chat_text(&String::from_utf8_lossy(&out.stdout))
 }
 
 /// Spawn `cmd`, write `input` to its stdin, and collect its output.
@@ -432,6 +519,77 @@ mod tests {
         let a = parse_chat(&resp).expect("parse");
         assert_eq!(a.summary, "ok");
         assert_eq!(a.suggestions[0].tool, "ffuf");
+    }
+
+    #[test]
+    fn the_claude_call_is_isolated_from_the_users_setup() {
+        let args = claude_args(
+            "sonnet",
+            std::path::Path::new("C:/tmp/winsploit-ai/settings.json"),
+        );
+        let at = |flag: &str| {
+            args.iter()
+                .position(|a| a == flag)
+                .unwrap_or_else(|| panic!("{flag} missing: {args:?}"))
+        };
+        // no tools at all: an empty value right after --tools
+        assert_eq!(args[at("--tools") + 1], "");
+        for flag in [
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--no-session-persistence",
+        ] {
+            at(flag);
+        }
+        assert_eq!(
+            args[at("--settings") + 1],
+            "C:/tmp/winsploit-ai/settings.json"
+        );
+        assert_eq!(args[at("--model") + 1], "sonnet");
+        assert_eq!(args[at("--system-prompt") + 1], CLAUDE_SYSTEM_PROMPT);
+        // never the dangerous switches
+        for bad in [
+            "--dangerously-skip-permissions",
+            "--allow-dangerously-skip-permissions",
+            "--permission-mode",
+            "--allowedTools",
+        ] {
+            assert!(!args.iter().any(|a| a == bad), "{bad} must not be passed");
+        }
+        // the prompt travels as one plain argument, even through a .cmd shim
+        assert!(!CLAUDE_SYSTEM_PROMPT.contains(['"', '%', '&', '|', '<', '>', '^', '\n']));
+    }
+
+    #[test]
+    fn the_scratch_folder_turns_hooks_off() {
+        let (dir, settings) = claude_scratch().unwrap();
+        assert!(dir.is_dir());
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(json["disableAllHooks"], true);
+        // the folder is neutral: not the working folder, not a project
+        assert_ne!(dir, std::env::current_dir().unwrap());
+        assert!(!dir.join("CLAUDE.md").exists());
+    }
+
+    #[test]
+    fn the_text_helpers_return_the_model_text_untouched() {
+        // the chat panel wants the raw text, not an Analysis
+        let envelope = serde_json::json!({ "is_error": false, "result": "hello {\"a\":1}" });
+        assert_eq!(
+            envelope_text(&envelope.to_string()).unwrap(),
+            "hello {\"a\":1}"
+        );
+        let resp = serde_json::json!({ "choices": [{ "message": { "content": "hi there" } }] });
+        assert_eq!(chat_text(&resp.to_string()).unwrap(), "hi there");
+        // errors still surface
+        let bad = serde_json::json!({ "is_error": true, "result": "rate limited" });
+        assert!(envelope_text(&bad.to_string())
+            .unwrap_err()
+            .contains("rate limited"));
+        assert!(envelope_text("not json").is_err());
+        assert!(chat_text(r#"{"choices": []}"#).is_err());
+        assert!(chat_text(r#"{"error": {"message": "nope"}}"#).is_err());
     }
 
     #[test]

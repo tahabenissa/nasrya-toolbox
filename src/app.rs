@@ -20,6 +20,7 @@ use ratatui::DefaultTerminal;
 use crate::agent;
 use crate::args;
 use crate::banner;
+use crate::chat::{self, Chat, Msg as ChatMsg, Plan, PlanState, Role as ChatRole};
 use crate::detect;
 use crate::editor::{History, LineEditor};
 use crate::envpath;
@@ -527,6 +528,8 @@ pub struct App {
     pub provider_pick: Option<ProviderPick>,
     /// An agent analysis is in flight (icon shows a spinner).
     pub agent_busy: bool,
+    /// The side chat (`T`): plain-language requests the AI turns into tool runs.
+    pub chat: Chat,
     /// Screen rect of the clickable agent icon, set by the renderer each frame.
     pub agent_icon: std::cell::Cell<Option<Rect>>,
     /// What is drawn where (topmost last), set by the renderer each frame.
@@ -638,6 +641,7 @@ impl App {
             agent: None,
             provider_pick: None,
             agent_busy: false,
+            chat: Chat::default(),
             agent_icon: std::cell::Cell::new(None),
             hits: std::cell::RefCell::new(Vec::new()),
             last_click: None,
@@ -749,6 +753,7 @@ impl App {
                         Screen::Main => self.on_key(key),
                     },
                     // bracketed paste: the whole pasted text arrives at once
+                    Event::Paste(text) if self.chat.focused => self.chat.input.insert_str(&text),
                     Event::Paste(text) if self.mode.is_prompt() => self.editor.insert_str(&text),
                     Event::Mouse(m) if self.screen == Screen::Main => self.on_mouse(m),
                     _ => {}
@@ -1685,6 +1690,20 @@ impl App {
                 }
             }
             AppEvent::Exited { sid, code } => {
+                // a run the chat started: tell the chat how it ended
+                if self.chat.watch.as_ref().is_some_and(|(id, _)| *id == sid) {
+                    if let Some((_, name)) = self.chat.watch.take() {
+                        let how = match code {
+                            Some(0) => "finished".to_string(),
+                            Some(c) => format!("exited with code {c}"),
+                            None => "ended".to_string(),
+                        };
+                        self.chat.say(
+                            ChatRole::Note,
+                            format!("{name} {how}. Ask me what it found."),
+                        );
+                    }
+                }
                 self.ended_seq += 1;
                 let seq = self.ended_seq;
                 if let Some(pos) = self.position_of(sid) {
@@ -1753,6 +1772,7 @@ impl App {
             AppEvent::Web(action, caller) => self.on_web_action(action, caller),
             AppEvent::Lan(ev) => self.on_lan_event(ev),
             AppEvent::Agent(res) => self.on_agent_result(res),
+            AppEvent::Chat { req, result } => self.on_chat_result(req, result),
             AppEvent::Update(tag) => {
                 self.toast(
                     ToastKind::Info,
@@ -2213,6 +2233,19 @@ impl App {
             self.show_help = false;
             return;
         }
+        // Ctrl+T shows or hides the chat panel from anywhere
+        if key.code == KeyCode::Char('t') && key.modifiers == KeyModifiers::CONTROL {
+            if self.chat.open {
+                self.close_chat();
+            } else if self.mode == Mode::Browsing {
+                self.open_chat();
+            }
+            return;
+        }
+        if self.chat.focused {
+            self.on_key_chat(key);
+            return;
+        }
         match self.mode {
             Mode::Browsing => self.on_key_browsing(key),
             Mode::SlotPick => self.on_key_slot_pick(key.code),
@@ -2385,6 +2418,7 @@ impl App {
             }
             KeyCode::Char('p') => self.open_project_menu(),
             KeyCode::Char('a') => self.start_analysis(),
+            KeyCode::Char('T') => self.open_chat(),
             KeyCode::Char('A') => {
                 let cursor = agent::Provider::ALL
                     .iter()
@@ -3827,34 +3861,12 @@ impl App {
             return;
         }
         let provider = self.settings.agent;
-        match provider.availability() {
-            agent::Availability::Ready => {}
-            agent::Availability::NeedsCli(exe) => {
-                self.console.push(format!(
-                    "[err] {} needs the `{exe}` CLI on PATH. Install it, or press A to pick \
-                     another provider.",
-                    provider.short()
-                ));
-                self.status_line = format!("{} unavailable (press A)", provider.short());
-                return;
-            }
-            agent::Availability::NeedsKey(env) => {
-                self.console.push(format!(
-                    "[err] {} needs the {env} environment variable set. Set it (then restart \
-                     winsploit), or press A to pick another provider.",
-                    provider.short()
-                ));
-                self.status_line = format!("{} needs {env} (press A)", provider.short());
-                return;
-            }
-            agent::Availability::NeedsCurl => {
-                self.console
-                    .push("[err] HTTP providers need `curl` on PATH (ships with Windows 10/11).");
-                self.status_line = "curl not found".into();
-                return;
-            }
+        if let Some((detail, status)) = Self::provider_problem(provider) {
+            self.console.push(format!("[err] {detail}"));
+            self.status_line = status;
+            return;
         }
-        let tail = self.output_tail(150, 6000);
+        let tail = self.for_the_ai(self.output_tail(150, 6000));
         if tail.trim().is_empty() {
             self.status_line = "no output to analyse yet — run a tool first".into();
             return;
@@ -3867,6 +3879,44 @@ impl App {
         self.agent_busy = true;
         self.status_line = format!("analysing with {} ({model})…", provider.short());
         agent::analyze(provider, model, names, ran, tail, self.tx.clone());
+    }
+
+    /// Why `provider` can't be used right now: (what to tell the user, the
+    /// status line), or None when it's ready.
+    fn provider_problem(provider: agent::Provider) -> Option<(String, String)> {
+        match provider.availability() {
+            agent::Availability::Ready => None,
+            agent::Availability::NeedsCli(exe) => Some((
+                format!(
+                    "{} needs the `{exe}` CLI on PATH. Install it, or press A to pick \
+                     another provider.",
+                    provider.short()
+                ),
+                format!("{} unavailable (press A)", provider.short()),
+            )),
+            agent::Availability::NeedsKey(env) => Some((
+                format!(
+                    "{} needs the {env} environment variable set. Set it (then restart \
+                     winsploit), or press A to pick another provider.",
+                    provider.short()
+                ),
+                format!("{} needs {env} (press A)", provider.short()),
+            )),
+            agent::Availability::NeedsCurl => Some((
+                "HTTP providers need `curl` on PATH (ships with Windows 10/11).".to_string(),
+                "curl not found".to_string(),
+            )),
+        }
+    }
+
+    /// Terminal text on its way to an AI provider, with secrets masked
+    /// unless the user turned `redact:` off.
+    fn for_the_ai(&self, text: String) -> String {
+        if self.settings.redact == crate::redact::Level::Off {
+            text
+        } else {
+            crate::redact::text(&text)
+        }
     }
 
     /// The model used for `provider`: the user's override if set, else the
@@ -4059,6 +4109,310 @@ impl App {
             None => {
                 self.status_line = format!("agent suggested an unknown tool: '{}'", s.tool);
             }
+        }
+    }
+
+    // ---- chat (`T`) ---------------------------------------------------
+    //
+    // Terminal only, on purpose (like Sandbox runs): the web view must never be
+    // able to make an AI choose commands, least of all for a LAN guest.
+
+    /// Show the chat panel and put the keyboard in it.
+    fn open_chat(&mut self) {
+        self.chat.open = true;
+        self.chat.focused = true;
+        if self.chat.msgs.is_empty() {
+            let then = if self.settings.chat_autorun {
+                "and run it right away"
+            } else {
+                "and ask before running it"
+            };
+            self.chat.say(
+                ChatRole::Note,
+                format!(
+                    "Tell me what to do in plain words, e.g. \"scan 10.0.0.5 for open ports\". \
+                     I pick the tool from your catalog {then}. Esc goes back to the dashboard, \
+                     Ctrl+T hides me, /clear starts over."
+                ),
+            );
+        }
+        self.status_line =
+            "chat: type what you want · Enter sends · Esc back to the dashboard".into();
+    }
+
+    fn close_chat(&mut self) {
+        self.chat.open = false;
+        self.chat.focused = false;
+    }
+
+    /// Keys while the chat input has the keyboard.
+    fn on_key_chat(&mut self, key: KeyEvent) {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        // AltGr arrives as Ctrl+Alt on Windows: those characters are text
+        let altgr = ctrl && alt;
+        let ctrl = ctrl && !altgr;
+        let page = 8;
+        let e = &mut self.chat.input;
+        match key.code {
+            KeyCode::Esc => self.chat_escape(),
+            KeyCode::Enter => self.chat_enter(),
+            KeyCode::PageUp => self.chat.scroll += page,
+            KeyCode::PageDown => self.chat.scroll = self.chat.scroll.saturating_sub(page),
+            KeyCode::Up => self.chat.scroll += 1,
+            KeyCode::Down => self.chat.scroll = self.chat.scroll.saturating_sub(1),
+            KeyCode::Left if ctrl => e.word_left(),
+            KeyCode::Right if ctrl => e.word_right(),
+            KeyCode::Left => e.left(),
+            KeyCode::Right => e.right(),
+            KeyCode::Home => e.home(),
+            KeyCode::End => e.end(),
+            KeyCode::Backspace if ctrl => e.delete_word_left(),
+            KeyCode::Backspace => e.backspace(),
+            KeyCode::Delete => e.delete(),
+            KeyCode::Char('u') if ctrl => e.clear_to_start(),
+            KeyCode::Char('w') if ctrl => e.delete_word_left(),
+            KeyCode::Char('a') if ctrl => e.home(),
+            KeyCode::Char('e') if ctrl => e.end(),
+            KeyCode::Char(c) if altgr => e.insert(c),
+            // other Ctrl/Alt chords aren't text
+            KeyCode::Char(_) if ctrl || alt => {}
+            KeyCode::Char(c) => e.insert(c),
+            _ => {}
+        }
+        self.chat.scroll = self.chat.scroll.min(self.chat.max_scroll.get());
+    }
+
+    /// Esc, one step at a time: stop waiting, clear the line, skip the plan,
+    /// then hand the keyboard back to the dashboard.
+    fn chat_escape(&mut self) {
+        if self.chat.busy {
+            self.chat.req += 1; // the answer, if it still comes, is dropped
+            self.chat.busy = false;
+            self.chat
+                .say(ChatRole::Note, "stopped waiting for the answer");
+        } else if !self.chat.input.text().is_empty() {
+            self.chat.input.set("");
+        } else if self.chat.pending().is_some() {
+            self.chat.skip_pending();
+            self.chat.say(ChatRole::Note, "skipped, nothing was run");
+        } else {
+            self.chat.focused = false;
+            self.status_line = "chat still open · T talks again · Ctrl+T hides it".into();
+        }
+    }
+
+    /// Enter: send what's typed, or (empty line) run the plan waiting for it.
+    fn chat_enter(&mut self) {
+        let text = self.chat.input.text().trim().to_string();
+        if text.is_empty() {
+            if self.chat.pending().is_some() {
+                self.run_plan();
+            }
+            return;
+        }
+        match text.as_str() {
+            "/clear" => {
+                self.chat.input.set("");
+                self.chat.clear();
+            }
+            "/close" => {
+                self.chat.input.set("");
+                self.close_chat();
+            }
+            _ => self.send_chat(text),
+        }
+    }
+
+    /// What the AI is told about the session: the catalog with install
+    /// status, where we are, the challenge target, and the terminal in front
+    /// (its output run through the redactor, like anything leaving the machine).
+    fn chat_context(&self) -> chat::Context {
+        fn clip(s: &str, n: usize) -> String {
+            s.chars().take(n).collect()
+        }
+        let tools = self
+            .tools
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.launch != Launch::Dataset)
+            .map(|(i, t)| chat::ToolInfo {
+                name: t.name.clone(),
+                status: match self.status[i] {
+                    ToolStatus::Installed => "installed",
+                    ToolStatus::Missing => "missing",
+                    ToolStatus::Conflict => "conflict",
+                    ToolStatus::Unknown => "unknown",
+                },
+                what: t.description.clone(),
+                example: clip(t.args_hint.as_deref().unwrap_or(""), 90),
+                flags: t
+                    .options
+                    .iter()
+                    .take(6)
+                    .map(|o| {
+                        let arg = o
+                            .arg
+                            .as_deref()
+                            .map(|a| format!(" {a}"))
+                            .unwrap_or_default();
+                        clip(&format!("{}{arg} {}", o.flag, o.help), 50)
+                    })
+                    .collect(),
+            })
+            .collect();
+        let tail = self.for_the_ai(self.output_tail(60, 3000));
+        chat::Context {
+            tools,
+            cwd: crate::folder::short(&self.cwd),
+            project: self.project.as_ref().map(|p| p.name.clone()),
+            challenge: self
+                .challenge
+                .as_ref()
+                .map(|w| (w.info.name.clone(), w.info.target.clone())),
+            ran: self.last_command(),
+            tail,
+        }
+    }
+
+    /// Send the typed message to the AI along with the context.
+    fn send_chat(&mut self, text: String) {
+        if self.chat.busy {
+            self.status_line = "still waiting for the answer · Esc stops waiting".into();
+            return;
+        }
+        let provider = self.settings.agent;
+        // (tests never talk to a real provider)
+        if !cfg!(test) {
+            if let Some((detail, status)) = Self::provider_problem(provider) {
+                self.chat
+                    .say(ChatRole::Note, format!("{detail} (Esc first, then A)"));
+                self.status_line = status;
+                return; // what was typed stays in the input
+            }
+        }
+        let prompt = chat::build_prompt(&self.chat_context(), &self.chat.history(), &text);
+        self.chat.input.set("");
+        self.chat.skip_pending();
+        self.chat.say(ChatRole::You, text);
+        self.chat.busy = true;
+        self.chat.req += 1;
+        let model = self.effective_model(provider);
+        self.status_line = format!("asking {} ({model})…", provider.short());
+        if !cfg!(test) {
+            agent::chat(provider, model, prompt, self.chat.req, self.tx.clone());
+        }
+    }
+
+    fn on_chat_result(&mut self, req: u64, result: Result<String, String>) {
+        if req != self.chat.req || !self.chat.busy {
+            return; // stopped waiting, cleared, or an older request
+        }
+        self.chat.busy = false;
+        match result {
+            Err(e) => {
+                self.chat
+                    .say(ChatRole::Note, format!("the AI request failed: {e}"));
+                self.status_line = "chat: the AI request failed".into();
+            }
+            Ok(text) => {
+                let reply = chat::parse_reply(&text);
+                match reply.run {
+                    Some(spec) => self.chat_plan(reply.text, spec),
+                    None if reply.text.is_empty() => self
+                        .chat
+                        .say(ChatRole::Agent, "(the AI had nothing to say)"),
+                    None => self.chat.say(ChatRole::Agent, reply.text),
+                }
+            }
+        }
+    }
+
+    /// Turn what the AI wants to run into a plan. Only a catalog tool with
+    /// args that parse can become one; a missing tool is shown, not run.
+    fn chat_plan(&mut self, text: String, spec: chat::RunSpec) {
+        let wanted = spec.tool.trim();
+        let Some(idx) = self
+            .tools
+            .iter()
+            .position(|t| t.name.eq_ignore_ascii_case(wanted))
+        else {
+            if !text.is_empty() {
+                self.chat.say(ChatRole::Agent, text);
+            }
+            self.chat.say(
+                ChatRole::Note,
+                format!(
+                    "the AI picked \"{wanted}\", which isn't in your catalog, so nothing was run"
+                ),
+            );
+            return;
+        };
+        let name = self.tools[idx].name.clone();
+        let args = spec.args.trim().to_string();
+        let state = if let Err(e) = args::split(&args) {
+            PlanState::Blocked(format!("can't read the args: {e}"))
+        } else {
+            match self.status[idx] {
+                ToolStatus::Installed => PlanState::Ready,
+                ToolStatus::Missing => PlanState::Blocked(format!(
+                    "{name} isn't installed: Esc, select it and press i"
+                )),
+                ToolStatus::Conflict => PlanState::Blocked(format!(
+                    "a different program called {} comes first on PATH",
+                    self.tools[idx].exe
+                )),
+                ToolStatus::Unknown => {
+                    PlanState::Blocked("still detecting tools, ask again in a moment".into())
+                }
+            }
+        };
+        let ready = state == PlanState::Ready;
+        self.chat.push(ChatMsg {
+            role: ChatRole::Agent,
+            text,
+            plan: Some(Plan {
+                tool: idx,
+                name,
+                args,
+                why: spec.why.trim().to_string(),
+                state,
+            }),
+        });
+        if ready && self.settings.chat_autorun {
+            self.run_plan();
+        } else if ready {
+            self.status_line = "chat: Enter runs the plan · Esc skips it".into();
+        }
+    }
+
+    /// Run the plan waiting in the chat through the normal launch path (so the
+    /// install / conflict / arg checks and the run log all apply).
+    fn run_plan(&mut self) {
+        let Some(plan) = self.chat.pending().cloned() else {
+            return;
+        };
+        if let Some(p) = self.chat.pending_mut() {
+            p.state = PlanState::Ran;
+        }
+        let before = self.next_id;
+        self.launch(plan.tool, &plan.args, Source::Terminal, None);
+        if self.mode == Mode::SlotPick {
+            // every terminal is busy: that question needs the keyboard
+            self.chat.focused = false;
+            self.chat.say(
+                ChatRole::Note,
+                "all four terminals are busy: press 1-4 to replace one, or Esc",
+            );
+        } else if self.next_id > before {
+            self.chat.watch = Some((self.next_id, plan.name.clone()));
+            self.chat.say(
+                ChatRole::Note,
+                format!("started {} in terminal {}", plan.name, self.focus),
+            );
+        } else {
+            // refused (not installed, ...) or a window / browser launch
+            self.chat.say(ChatRole::Note, self.status_line.clone());
         }
     }
 
@@ -4816,6 +5170,479 @@ mod tests {
         assert_eq!(a.focus, 4, "grid never focuses the console");
         a.on_key(key(KeyCode::Char('0')));
         assert!(!a.grid);
+    }
+
+    // ---- the side chat (`T`) --------------------------------------------
+
+    fn tool_idx(a: &App, name: &str) -> usize {
+        a.tools.iter().position(|t| t.name == name).unwrap()
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    /// Type `text` into the chat and press Enter (no provider is ever called
+    /// under test), then deliver `answer` as the AI's reply.
+    fn chat_says(a: &mut App, text: &str, answer: &str) {
+        for c in text.chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        let req = a.chat.req;
+        a.on_runner_event(AppEvent::Chat {
+            req,
+            result: Ok(answer.to_string()),
+        });
+    }
+
+    fn answer(tool: &str, args: &str) -> String {
+        serde_json::json!({
+            "reply": "On it.",
+            "run": { "tool": tool, "args": args, "why": "because" }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn t_opens_the_chat_and_it_keeps_the_keyboard_until_esc() {
+        let mut a = app();
+        assert!(!a.chat.open);
+        a.on_key(key(KeyCode::Char('T')));
+        assert!(a.chat.open && a.chat.focused);
+        assert_eq!(a.chat.msgs.len(), 1, "a short greeting");
+        assert_eq!(a.chat.msgs[0].role, ChatRole::Note);
+
+        // dashboard keys are typed text now, not commands
+        for c in "qxg".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(a.chat.input.text(), "qxg");
+        assert!(!a.quit && !a.grid);
+
+        // Esc steps back: clear the line, then give the keyboard back
+        a.on_key(key(KeyCode::Esc));
+        assert_eq!(a.chat.input.text(), "");
+        assert!(a.chat.focused);
+        a.on_key(key(KeyCode::Esc));
+        assert!(a.chat.open && !a.chat.focused);
+        a.on_key(key(KeyCode::Char('g'))); // the dashboard answers again
+        assert!(a.grid);
+        a.on_key(key(KeyCode::Char('g')));
+
+        // T talks again; Ctrl+T hides and shows
+        a.on_key(key(KeyCode::Char('T')));
+        assert!(a.chat.focused);
+        a.on_key(ctrl('t'));
+        assert!(!a.chat.open && !a.chat.focused);
+        a.on_key(ctrl('t'));
+        assert!(a.chat.open && a.chat.focused);
+        assert_eq!(a.chat.msgs.len(), 1, "the transcript survives hiding");
+    }
+
+    #[test]
+    fn a_message_goes_out_once_and_waits_for_the_answer() {
+        let mut a = app();
+        a.on_key(key(KeyCode::Char('T')));
+        for c in "scan 10.0.0.5".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        let last = a.chat.msgs.last().unwrap();
+        assert_eq!(
+            (last.role, last.text.as_str()),
+            (ChatRole::You, "scan 10.0.0.5")
+        );
+        assert!(a.chat.busy);
+        assert_eq!(a.chat.req, 1);
+        assert_eq!(a.chat.input.text(), "");
+
+        // a second message while waiting is held back, and kept in the input
+        let n = a.chat.msgs.len();
+        for c in "and more".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        assert_eq!(a.chat.msgs.len(), n);
+        assert_eq!(a.chat.input.text(), "and more");
+        assert!(a.status_line.contains("still waiting"), "{}", a.status_line);
+    }
+
+    #[test]
+    fn an_installed_tool_becomes_a_plan_that_waits_for_enter() {
+        let mut a = app();
+        let nmap = tool_idx(&a, "nmap");
+        a.status[nmap] = ToolStatus::Installed;
+        a.on_key(key(KeyCode::Char('T')));
+        // the AI's capitalisation doesn't matter, the catalog's spelling wins
+        chat_says(&mut a, "scan it", &answer("NMAP", "-sV 10.0.0.5"));
+        assert!(!a.chat.busy);
+        let plan = a.chat.pending().expect("a plan is waiting").clone();
+        assert_eq!(plan.name, "nmap");
+        assert_eq!(plan.tool, nmap);
+        assert_eq!(plan.args, "-sV 10.0.0.5");
+        assert_eq!(plan.why, "because");
+        assert!(a.status_line.contains("Enter runs the plan"));
+        // nothing was started
+        assert!(a.slots.iter().all(Option::is_none));
+        assert!(a.chat.watch.is_none());
+    }
+
+    #[test]
+    fn plans_that_cannot_run_say_why_and_never_run() {
+        let mut a = app();
+        let ffuf = tool_idx(&a, "ffuf");
+        let nmap = tool_idx(&a, "nmap");
+        a.status[ffuf] = ToolStatus::Missing;
+        a.status[nmap] = ToolStatus::Installed;
+        a.on_key(key(KeyCode::Char('T')));
+
+        let blocked = |a: &App| match &a.chat.msgs.last().unwrap().plan.as_ref().unwrap().state {
+            PlanState::Blocked(why) => why.clone(),
+            other => panic!("expected a blocked plan, got {other:?}"),
+        };
+        chat_says(&mut a, "fuzz it", &answer("ffuf", "-u http://x/FUZZ"));
+        assert!(blocked(&a).contains("isn't installed"), "{}", blocked(&a));
+        assert!(a.chat.pending().is_none(), "Enter has nothing to run");
+
+        a.status[ffuf] = ToolStatus::Conflict;
+        chat_says(&mut a, "again", &answer("ffuf", "-u http://x/FUZZ"));
+        assert!(blocked(&a).contains("different program"), "{}", blocked(&a));
+
+        // args that don't parse (an open quote) never reach the launcher
+        chat_says(&mut a, "scan", &answer("nmap", "-sV \"10.0.0.5"));
+        assert!(
+            blocked(&a).contains("can't read the args"),
+            "{}",
+            blocked(&a)
+        );
+
+        // a tool that isn't in the catalog is shown, not run
+        let before = a.chat.msgs.len();
+        chat_says(&mut a, "hack it", &answer("rm -rf", "/"));
+        assert!(a.chat.msgs[before..].iter().all(|m| m.plan.is_none()));
+        let note = &a.chat.msgs.last().unwrap();
+        assert_eq!(note.role, ChatRole::Note);
+        assert!(note.text.contains("isn't in your catalog"), "{}", note.text);
+        assert!(a.slots.iter().all(Option::is_none), "nothing started");
+    }
+
+    #[test]
+    fn answers_without_a_run_are_just_replies() {
+        let mut a = app();
+        a.on_key(key(KeyCode::Char('T')));
+        chat_says(
+            &mut a,
+            "which host?",
+            r#"{"reply": "Which host?", "run": null}"#,
+        );
+        let m = a.chat.msgs.last().unwrap();
+        assert_eq!((m.role, m.text.as_str()), (ChatRole::Agent, "Which host?"));
+        assert!(m.plan.is_none());
+        // a model that ignores the JSON format is still heard
+        chat_says(&mut a, "hello", "Just say what to scan.");
+        assert_eq!(a.chat.msgs.last().unwrap().text, "Just say what to scan.");
+        // a failed request is shown in the chat, and the chat is usable again
+        for c in "x".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        let req = a.chat.req;
+        a.on_runner_event(AppEvent::Chat {
+            req,
+            result: Err("401 invalid api key".into()),
+        });
+        assert!(!a.chat.busy);
+        assert!(a
+            .chat
+            .msgs
+            .last()
+            .unwrap()
+            .text
+            .contains("401 invalid api key"));
+    }
+
+    #[test]
+    fn enter_on_an_empty_line_runs_the_plan_through_the_launcher_checks() {
+        let mut a = app();
+        let nmap = tool_idx(&a, "nmap");
+        a.status[nmap] = ToolStatus::Installed;
+        a.on_key(key(KeyCode::Char('T')));
+        chat_says(&mut a, "scan", &answer("nmap", "-sV 10.0.0.5"));
+        assert!(a.chat.pending().is_some());
+        // the tool vanished from PATH since the plan was made: the launcher
+        // refuses, which proves the normal checks still stand between the AI
+        // and a process (and no process is started under test)
+        a.status[nmap] = ToolStatus::Missing;
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.chat.pending().is_none(), "the plan is used up");
+        assert_eq!(
+            a.chat.msgs[a.chat.msgs.len() - 2]
+                .plan
+                .as_ref()
+                .unwrap()
+                .state,
+            PlanState::Ran
+        );
+        assert!(a.status_line.contains("not installed"), "{}", a.status_line);
+        assert!(a.chat.msgs.last().unwrap().text.contains("not installed"));
+        assert!(a.slots.iter().all(Option::is_none));
+        // Enter again does nothing
+        let n = a.chat.msgs.len();
+        a.on_key(key(KeyCode::Enter));
+        assert_eq!(a.chat.msgs.len(), n);
+    }
+
+    #[test]
+    fn esc_skips_a_plan_and_a_new_message_makes_it_stale() {
+        let mut a = app();
+        let nmap = tool_idx(&a, "nmap");
+        a.status[nmap] = ToolStatus::Installed;
+        a.on_key(key(KeyCode::Char('T')));
+        chat_says(&mut a, "scan", &answer("nmap", "-sV x"));
+        a.on_key(key(KeyCode::Esc));
+        assert!(a.chat.pending().is_none());
+        assert!(a.chat.focused, "the first Esc only skipped the plan");
+        assert!(a.chat.msgs.iter().any(|m| m
+            .plan
+            .as_ref()
+            .is_some_and(|p| p.state == PlanState::Skipped)));
+
+        chat_says(&mut a, "scan", &answer("nmap", "-sV y"));
+        assert!(a.chat.pending().is_some());
+        // typing something new instead: the old plan can no longer be run
+        for c in "wait".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.chat.pending().is_none());
+        assert!(a
+            .chat
+            .msgs
+            .iter()
+            .filter_map(|m| m.plan.as_ref())
+            .all(|p| p.state != PlanState::Ready));
+    }
+
+    #[test]
+    fn autorun_still_goes_through_the_launcher_and_never_runs_a_blocked_plan() {
+        let mut a = app();
+        a.settings.chat_autorun = true;
+        let nmap = tool_idx(&a, "nmap");
+        let ffuf = tool_idx(&a, "ffuf");
+        a.status[nmap] = ToolStatus::Installed;
+        a.status[ffuf] = ToolStatus::Missing;
+        a.on_key(key(KeyCode::Char('T')));
+        // blocked: nothing happens, however autorun is set
+        chat_says(&mut a, "fuzz", &answer("ffuf", "-u x"));
+        assert!(a
+            .chat
+            .msgs
+            .last()
+            .unwrap()
+            .plan
+            .as_ref()
+            .is_some_and(|p| matches!(p.state, PlanState::Blocked(_))));
+        assert!(a.slots.iter().all(Option::is_none));
+        // runnable: it goes straight to the launcher. All four terminals are
+        // busy here, so the launcher asks which to replace and starts nothing
+        for i in 0..SLOTS {
+            fake(&mut a, i, "busy", true, 0);
+        }
+        chat_says(&mut a, "scan", &answer("nmap", "-sV 10.0.0.5"));
+        assert_eq!(a.mode, Mode::SlotPick);
+        assert!(!a.chat.focused, "the slot question needs the keyboard");
+        assert!(a.chat.msgs.last().unwrap().text.contains("busy"));
+        // answering it hands the keys back to the dashboard (Esc cancels)
+        a.on_key(key(KeyCode::Esc));
+        assert_eq!(a.mode, Mode::Browsing);
+    }
+
+    #[test]
+    fn the_chat_says_when_a_run_it_started_ends() {
+        let mut a = app();
+        fake(&mut a, 0, "nmap", true, 0);
+        let sid = a.slots[0].as_ref().unwrap().id;
+        a.chat.watch = Some((sid, "nmap".into()));
+        a.on_runner_event(AppEvent::Exited { sid, code: Some(2) });
+        let m = a.chat.msgs.last().unwrap();
+        assert_eq!(m.role, ChatRole::Note);
+        assert!(m.text.contains("nmap exited with code 2"), "{}", m.text);
+        assert!(a.chat.watch.is_none());
+        // a run it didn't start stays out of the chat
+        fake(&mut a, 1, "ffuf", true, 0);
+        let other = a.slots[1].as_ref().unwrap().id;
+        let n = a.chat.msgs.len();
+        a.on_runner_event(AppEvent::Exited {
+            sid: other,
+            code: Some(0),
+        });
+        assert_eq!(a.chat.msgs.len(), n);
+    }
+
+    #[test]
+    fn stale_answers_are_dropped_and_clear_starts_over() {
+        let mut a = app();
+        a.on_key(key(KeyCode::Char('T')));
+        for c in "scan".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        let old = a.chat.req;
+        a.on_key(key(KeyCode::Esc)); // stop waiting
+        assert!(!a.chat.busy);
+        let n = a.chat.msgs.len();
+        a.on_runner_event(AppEvent::Chat {
+            req: old,
+            result: Ok(answer("nmap", "-sV x")),
+        });
+        assert_eq!(a.chat.msgs.len(), n, "the late answer is ignored");
+
+        // /clear works even while an answer is on its way: it empties the
+        // transcript and the late answer is dropped
+        for c in "hi".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.chat.busy);
+        let waiting = a.chat.req;
+        for c in "/clear".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.chat.msgs.is_empty() && !a.chat.busy);
+        assert_ne!(a.chat.req, waiting);
+        a.on_runner_event(AppEvent::Chat {
+            req: waiting,
+            result: Ok(answer("nmap", "-sV x")),
+        });
+        assert!(
+            a.chat.msgs.is_empty(),
+            "the answer to a cleared chat is dropped"
+        );
+
+        // /close hides the panel
+        for c in "/close".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter));
+        assert!(!a.chat.open && !a.chat.focused);
+    }
+
+    #[test]
+    fn what_the_ai_is_told_is_the_session_with_secrets_masked() {
+        let mut a = app();
+        let nmap = tool_idx(&a, "nmap");
+        a.status[nmap] = ToolStatus::Installed;
+        a.console.push("$ nmap -sV 10.0.0.5");
+        a.console
+            .push("login with password=hunter2 on https://u:pw@host/");
+        a.console.push("22/tcp open ssh");
+        let ctx = a.chat_context();
+        assert!(
+            ctx.tools.iter().all(|t| t.name != "seclists-lite"),
+            "datasets are left out"
+        );
+        let t = ctx.tools.iter().find(|t| t.name == "nmap").unwrap();
+        assert_eq!(t.status, "installed");
+        assert!(!t.what.is_empty() && !t.flags.is_empty());
+        assert_eq!(ctx.ran.as_deref(), Some("nmap -sV 10.0.0.5"));
+        assert!(ctx.tail.contains("22/tcp open ssh"));
+        assert!(
+            !ctx.tail.contains("hunter2") && !ctx.tail.contains(":pw@"),
+            "{}",
+            ctx.tail
+        );
+        // the user can switch redaction off
+        a.settings.redact = crate::redact::Level::Off;
+        assert!(a.chat_context().tail.contains("hunter2"));
+        // the challenge's target is part of the context
+        a.challenge = Some(crate::workspace::Workspace {
+            dir: PathBuf::from("x"),
+            id: "pico/rev".into(),
+            info: crate::workspace::Info {
+                name: "rev".into(),
+                target: "10.10.10.3".into(),
+                ..Default::default()
+            },
+        });
+        assert_eq!(
+            a.chat_context().challenge,
+            Some(("rev".into(), "10.10.10.3".into()))
+        );
+    }
+
+    /// Talks to the real AI provider: run by hand with
+    /// `cargo test live_chat -- --ignored --nocapture`. Checks that a real
+    /// model, given the real prompt, answers in the format the chat expects
+    /// and picks a tool that exists in the catalog.
+    #[test]
+    #[ignore = "calls the real AI provider (uses your login); run by hand"]
+    fn live_chat_round_trip() {
+        let mut a = app();
+        for name in ["nmap", "ffuf", "gobuster"] {
+            let i = tool_idx(&a, name);
+            a.status[i] = ToolStatus::Installed;
+        }
+        let provider = a.settings.agent;
+        assert!(
+            App::provider_problem(provider).is_none(),
+            "{provider:?} isn't ready"
+        );
+        let ctx = a.chat_context();
+        let prompt = chat::build_prompt(
+            &ctx,
+            &[],
+            "scan 10.0.0.5 for open ports and tell me which services run on them",
+        );
+        println!("prompt: {} chars", prompt.chars().count());
+        let (tx, rx) = std::sync::mpsc::channel();
+        agent::chat(provider, a.effective_model(provider), prompt, 7, tx);
+        let ev = rx
+            .recv_timeout(std::time::Duration::from_secs(240))
+            .expect("no answer in 4 minutes");
+        let AppEvent::Chat { req, result } = ev else {
+            panic!("expected a chat event");
+        };
+        assert_eq!(req, 7);
+        let text = result.expect("the request failed");
+        println!("raw answer: {text}");
+        let reply = chat::parse_reply(&text);
+        println!("reply: {reply:?}");
+        let run = reply.run.expect("the model should have chosen a tool");
+        let idx = a
+            .tools
+            .iter()
+            .position(|t| t.name.eq_ignore_ascii_case(&run.tool))
+            .unwrap_or_else(|| panic!("{:?} isn't in the catalog", run.tool));
+        println!("tool: {} args: {}", a.tools[idx].name, run.args);
+        assert!(
+            args::split(&run.args).is_ok(),
+            "args don't parse: {:?}",
+            run.args
+        );
+        assert!(
+            run.args.contains("10.0.0.5"),
+            "the target is missing: {:?}",
+            run.args
+        );
+    }
+
+    #[test]
+    fn the_chat_is_not_reachable_from_the_web_view() {
+        // terminal only, on purpose: no web action opens it or sends to it
+        let mut a = app();
+        let (cmd_tx, _) = std::sync::mpsc::channel::<()>();
+        drop(cmd_tx);
+        assert!(!a.chat.open);
+        for text in [r#"{"type":"chat","text":"scan"}"#, r#"{"type":"talk"}"#] {
+            assert!(
+                serde_json::from_str::<crate::web::WebAction>(text).is_err(),
+                "{text} must not parse as a web action"
+            );
+        }
+        a.on_key(key(KeyCode::Char('T')));
+        assert!(a.chat.open);
     }
 
     // ------------------------------------------------------------ web view

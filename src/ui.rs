@@ -15,6 +15,7 @@ use crate::app::{
     ProjectUi, ProviderPick, ToastKind, ToolStatus, JOIN_CHOICES, JOIN_GRACE, TOUR_STEPS,
 };
 use crate::banner;
+use crate::chat::{self, Msg as ChatMsg, PlanState, Role as ChatRole};
 use crate::registry::{self, Launch, Sandbox};
 use crate::session::{RunState, Session, SLOTS};
 use crate::theme::{Backdrop, Field, OverlayPos, Theme, ThemeName};
@@ -40,29 +41,51 @@ pub fn render(f: &mut Frame, app: &App) {
     render_header(f, app, &th, chunks[0]);
     render_categories(f, app, &th, chunks[1]);
 
-    let body = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(36), Constraint::Percentage(64)])
-        .split(chunks[2]);
+    // the chat panel takes the right of the body (all of it on a narrow screen)
+    let (main_area, chat_area) = if app.chat.open {
+        let w = chunks[2].width;
+        if w >= CHAT_MIN_SPLIT {
+            let cw = (u32::from(w) * 36 / 100).clamp(36, 64) as u16;
+            let s = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(40), Constraint::Length(cw)])
+                .split(chunks[2]);
+            (s[0], Some(s[1]))
+        } else {
+            (Rect::default(), Some(chunks[2]))
+        }
+    } else {
+        (chunks[2], None)
+    };
 
-    // left: tool list, card for the selected tool
-    let left = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(3),
-            Constraint::Length(if body[0].height >= 15 { 6 } else { 0 }),
-        ])
-        .split(body[0]);
-    render_tool_list(f, app, &th, left[0]);
-    render_tool_card(f, app, &th, left[1]);
+    if main_area.width > 0 {
+        let body = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(36), Constraint::Percentage(64)])
+            .split(main_area);
 
-    // right: terminal tabs, then one terminal or the 2x2 grid
-    let right = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(3)])
-        .split(body[1]);
-    render_terminal_tabs(f, app, &th, right[0]);
-    render_terminals(f, app, &th, right[1]);
+        // left: tool list, card for the selected tool
+        let left = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(3),
+                Constraint::Length(if body[0].height >= 15 { 6 } else { 0 }),
+            ])
+            .split(body[0]);
+        render_tool_list(f, app, &th, left[0]);
+        render_tool_card(f, app, &th, left[1]);
+
+        // right: terminal tabs, then one terminal or the 2x2 grid
+        let right = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(3)])
+            .split(body[1]);
+        render_terminal_tabs(f, app, &th, right[0]);
+        render_terminals(f, app, &th, right[1]);
+    }
+    if let Some(area) = chat_area {
+        render_chat(f, app, &th, area);
+    }
     render_footer(f, app, &th, chunks[3]);
     // toasts sit under the overlays, the tour over everything
     render_toasts(f, app, &th, chunks[2]);
@@ -190,6 +213,11 @@ pub const HELP: &[HelpGroup] = &[
         title: "Agent",
         rows: &[
             ("a", "agent: AI reads the output and suggests next steps"),
+            (
+                "T",
+                "chat: say what you want in plain words; the AI picks the tool and asks before running it",
+            ),
+            ("Ctrl+T", "show / hide the chat panel · /clear starts over"),
             (
                 "A",
                 "choose the agent's AI (claude / gemini / deepseek / openai / ollama)",
@@ -567,6 +595,146 @@ fn render_lan_panel(f: &mut Frame, app: &App, cur: usize, th: &Theme, area: Rect
             "↑↓ pick · v watch · f full · x remove · n new key · Esc close",
         )),
         popup,
+    );
+}
+
+/// The body is at least this wide before the chat sits beside the terminals;
+/// narrower, the chat takes the whole body.
+const CHAT_MIN_SPLIT: u16 = 90;
+/// Width of the label column in the chat ("you ", "ai  ", ":: ").
+const CHAT_LABEL_W: usize = 4;
+
+/// One chat message as rows: a label, the wrapped text, then the plan card.
+fn chat_lines(th: &Theme, m: &ChatMsg, width: usize, out: &mut Vec<Line<'static>>) {
+    let p = &th.pal;
+    let body_w = width.saturating_sub(CHAT_LABEL_W).max(1);
+    let pad = " ".repeat(CHAT_LABEL_W);
+    let (label, label_style, text_style) = match m.role {
+        ChatRole::You => ("you ", th.strong(p.info), th.fg(p.fg)),
+        ChatRole::Agent => ("ai  ", th.strong(p.accent), th.fg(p.fg)),
+        ChatRole::Note => ("::  ", th.fg(p.dim), th.fg(p.dim)),
+    };
+    let mut first = true;
+    let mut push = |text: String, style: Style, out: &mut Vec<Line<'static>>| {
+        let lead = if first {
+            Span::styled(label, label_style)
+        } else {
+            Span::raw(pad.clone())
+        };
+        first = false;
+        out.push(Line::from(vec![lead, Span::styled(text, style)]));
+    };
+    if !m.text.is_empty() {
+        for row in chat::wrap(&m.text, body_w) {
+            push(row, text_style, out);
+        }
+    }
+    if let Some(plan) = &m.plan {
+        let g = &th.glyph;
+        let cmd = format!("{} {} {}", g.arrow, plan.name, plan.args);
+        for row in chat::wrap(&cmd, body_w) {
+            push(row, th.strong(p.warn), out);
+        }
+        if !plan.why.is_empty() {
+            for row in chat::wrap(&plan.why, body_w) {
+                push(row, th.fg(p.dim), out);
+            }
+        }
+        let (text, style) = match &plan.state {
+            PlanState::Ready => ("Enter runs it - Esc skips it".to_string(), th.strong(p.ok)),
+            PlanState::Blocked(why) => (why.clone(), th.fg(p.err)),
+            PlanState::Ran => (format!("{} started", g.done), th.fg(p.dim)),
+            PlanState::Skipped => ("skipped".to_string(), th.fg(p.dim)),
+        };
+        for row in chat::wrap(&text, body_w) {
+            push(row, style, out);
+        }
+    }
+    if m.role != ChatRole::Note {
+        out.push(Line::raw(""));
+    }
+}
+
+/// The side chat (`T`): the conversation, the plan waiting for Enter, and
+/// the line being typed.
+fn render_chat(f: &mut Frame, app: &App, th: &Theme, area: Rect) {
+    let p = &th.pal;
+    let chat = &app.chat;
+    let provider = app.settings.agent;
+    let hint = if chat.focused {
+        "Enter send - Esc back - Ctrl+T hide"
+    } else {
+        "T talk - Ctrl+T hide"
+    };
+    let block = th
+        .block(if chat.focused { p.accent } else { p.border })
+        .title(Span::styled(
+            format!(
+                " chat - {} ({}) ",
+                provider.short(),
+                app.effective_model(provider)
+            ),
+            th.strong(p.accent),
+        ))
+        .title_bottom(
+            Line::from(Span::styled(format!(" {hint} "), th.fg(p.dim))).alignment(Alignment::Right),
+        );
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.height < 2 || inner.width < 8 {
+        return;
+    }
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+    let (log_area, input_area) = (rows[0], rows[1]);
+
+    // the transcript sits on the bottom edge; scrolling moves it up
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for m in &chat.msgs {
+        chat_lines(th, m, log_area.width as usize, &mut lines);
+    }
+    if chat.busy {
+        let spin = th.glyph.spinner[(app.tick as usize / 2) % th.glyph.spinner.len()];
+        lines.push(Line::from(Span::styled(
+            format!("{spin} thinking..."),
+            th.fg(p.dim).add_modifier(Modifier::ITALIC),
+        )));
+    }
+    let h = log_area.height as usize;
+    let max = lines.len().saturating_sub(h);
+    chat.max_scroll.set(max);
+    let end = lines.len() - chat.scroll.min(max);
+    let start = end.saturating_sub(h);
+    f.render_widget(Paragraph::new(lines[start..end].to_vec()), log_area);
+
+    // the input line, like the footer's prompts
+    let label = " you ";
+    let label_w = label.chars().count() as u16 + 1;
+    let text_w = input_area.width.saturating_sub(label_w).max(1);
+    let (visible, col) = chat.input.view(text_w as usize);
+    if chat.focused && app.appearance.is_none() && !app.show_help {
+        f.set_cursor_position((input_area.x + label_w + col as u16, input_area.y));
+    }
+    let typed = if visible.is_empty() && !chat.busy {
+        Span::styled(
+            "what do you want to do?",
+            th.fg(p.dim).add_modifier(Modifier::ITALIC),
+        )
+    } else {
+        Span::styled(visible, th.fg(p.fg))
+    };
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                label,
+                pill(th, if chat.focused { p.accent } else { p.border }),
+            ),
+            Span::raw(" "),
+            typed,
+        ])),
+        input_area,
     );
 }
 
@@ -1922,6 +2090,19 @@ fn render_footer(f: &mut Frame, app: &App, th: &Theme, area: Rect) {
     let p = &th.pal;
     let arrow = th.glyph.arrow;
     let content = match app.mode {
+        // the keyboard is in the chat, so say what its keys do
+        _ if app.chat.focused => {
+            let hint = if app.chat.pending().is_some() {
+                "Enter runs the plan · type to ask for something else · Esc skips it"
+            } else {
+                "Enter sends · Esc back to the dashboard · PgUp/PgDn scroll · /clear · Ctrl+T hides"
+            };
+            Line::from(vec![
+                Span::styled(format!(" chat {arrow} "), pill(th, p.accent)),
+                Span::raw(" "),
+                Span::styled(hint, th.fg(p.dim)),
+            ])
+        }
         Mode::SlotPick => {
             let mut spans = vec![
                 Span::styled(
@@ -3127,6 +3308,195 @@ mod tests {
             assert!(!screen.contains(bad), "ascii mode still draws {bad:?}");
         }
         assert!(screen.contains("+--"), "{screen}");
+    }
+
+    // ---- the side chat -------------------------------------------------------
+
+    /// A chat with every kind of message: you, the AI with a plan waiting,
+    /// a blocked plan, a started run, and a note.
+    fn chatty() -> App {
+        use crate::chat::{Msg, Plan, PlanState, Role};
+        let mut a = app();
+        a.chat.open = true;
+        a.chat.focused = true;
+        a.chat.say(Role::Note, "Tell me what to do in plain words.");
+        a.chat.say(Role::You, "scan 10.0.0.5 for open ports");
+        let plan = |name: &str, state| Plan {
+            tool: 0,
+            name: name.into(),
+            args: "-sV -T4 10.0.0.5".into(),
+            why: "fingerprint the services".into(),
+            state,
+        };
+        a.chat.push(Msg {
+            role: Role::Agent,
+            text: "I'll fingerprint the common ports.".into(),
+            plan: Some(plan("nmap", PlanState::Ran)),
+        });
+        a.chat.say(Role::Note, "started nmap in terminal 1");
+        a.chat.say(Role::You, "now fuzz it");
+        a.chat.push(Msg {
+            role: Role::Agent,
+            text: "".into(),
+            plan: Some(plan(
+                "ffuf",
+                PlanState::Blocked("ffuf isn't installed: Esc, select it and press i".into()),
+            )),
+        });
+        a.chat.say(Role::You, "ok scan again");
+        a.chat.push(Msg {
+            role: Role::Agent,
+            text: "Sure.".into(),
+            plan: Some(plan("nmap", PlanState::Ready)),
+        });
+        a.chat.input.set("what did it find");
+        a
+    }
+
+    #[test]
+    fn the_chat_panel_sits_beside_the_terminals() {
+        let a = chatty();
+        let t = draw(&a, 130, 34);
+        let s = screen(&t, 34);
+        for k in [
+            "chat - claude",
+            "you",
+            "scan 10.0.0.5 for open ports",
+            "fingerprint the common ports",
+            "nmap -sV -T4 10.0.0.5",
+            "fingerprint the services",
+            "isn't installed",
+            "Enter runs it - Esc skips it",
+            "started nmap in terminal 1",
+            "what did it find",
+            "Enter send - Esc back - Ctrl+T hide",
+            // the dashboard is still there next to it
+            " console ",
+            "nmap",
+        ] {
+            assert!(s.contains(k), "chat panel is missing {k:?}:\n{s}");
+        }
+        // narrow: the chat takes the whole body instead of squeezing the terminals
+        let t = draw(&a, 80, 24);
+        let s = screen(&t, 24);
+        assert!(
+            s.contains("chat - claude") && s.contains("what did it find"),
+            "{s}"
+        );
+        assert!(!s.contains(" console "), "{s}");
+        // closed: back to the plain dashboard
+        let mut a = a;
+        a.chat.open = false;
+        let s = screen(&draw(&a, 130, 34), 34);
+        assert!(
+            !s.contains("chat - claude") && s.contains(" console "),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn the_chat_panel_survives_every_size_and_state() {
+        let mut a = chatty();
+        a.chat.busy = true;
+        for focused in [true, false] {
+            a.chat.focused = focused;
+            for (w, h) in [
+                (160, 50),
+                (130, 34),
+                (89, 20),
+                (90, 20),
+                (80, 24),
+                (40, 10),
+                (20, 5),
+                (10, 4),
+                (3, 2),
+            ] {
+                draw(&a, w, h);
+            }
+        }
+        // many messages, scrolled past the top: clamped, no panic
+        let mut a = chatty();
+        for i in 0..200 {
+            a.chat.say(
+                crate::chat::Role::You,
+                format!("message number {i} with some words to wrap around"),
+            );
+        }
+        a.chat.scroll = 10_000;
+        draw(&a, 100, 20);
+        assert!(a.chat.max_scroll.get() > 0);
+    }
+
+    #[test]
+    fn the_chat_sticks_to_the_newest_message_and_scrolls_back() {
+        let mut a = app();
+        a.chat.open = true;
+        for i in 0..60 {
+            a.chat
+                .say(crate::chat::Role::Note, format!("line number {i:02}"));
+        }
+        let s = screen(&draw(&a, 100, 20), 20);
+        assert!(
+            s.contains("line number 59") && !s.contains("line number 00"),
+            "{s}"
+        );
+        assert!(a.chat.max_scroll.get() > 30);
+        a.chat.scroll = usize::MAX;
+        let s = screen(&draw(&a, 100, 20), 20);
+        assert!(
+            s.contains("line number 00") && !s.contains("line number 59"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn the_footer_describes_the_chat_keys_while_the_chat_has_the_keyboard() {
+        let mut a = chatty();
+        let footer = |a: &App| row(&draw(a, 130, 34), 33);
+        // the newest message is a plan waiting for Enter
+        assert!(footer(&a).contains("Enter runs the plan"), "{}", footer(&a));
+        a.chat.msgs.pop();
+        assert!(
+            footer(&a).contains("Esc back to the dashboard"),
+            "{}",
+            footer(&a)
+        );
+        // handing the keyboard back restores the dashboard's hints
+        a.chat.focused = false;
+        assert!(footer(&a).contains("category"), "{}", footer(&a));
+    }
+
+    #[test]
+    fn a_waiting_chat_shows_it_and_an_empty_input_shows_a_prompt() {
+        let mut a = app();
+        a.chat.open = true;
+        a.chat.focused = true;
+        let s = screen(&draw(&a, 120, 30), 30);
+        assert!(s.contains("what do you want to do?"), "{s}");
+        a.chat.busy = true;
+        let s = screen(&draw(&a, 120, 30), 30);
+        assert!(s.contains("thinking..."), "{s}");
+    }
+
+    #[test]
+    fn the_chat_in_ascii_mode_draws_no_symbols() {
+        use crate::theme::{Borders, GlyphSet};
+        let mut a = chatty();
+        a.chat.busy = true;
+        a.settings.borders = Borders::Ascii;
+        a.settings.glyphs = GlyphSet::Ascii;
+        let s = screen(&draw(&a, 130, 34), 34);
+        for bad in ["╭", "─", "│", "●", "○", "▸", "✓", "✗", "⠋", "◂"] {
+            assert!(!s.contains(bad), "ascii mode still draws {bad:?}:\n{s}");
+        }
+        assert!(s.contains("nmap -sV"), "{s}");
+    }
+
+    #[test]
+    fn help_lists_the_chat_keys() {
+        let rows: Vec<_> = help_rows().collect();
+        assert!(rows.iter().any(|(k, d)| *k == "T" && d.contains("chat")));
+        assert!(rows.iter().any(|(k, _)| *k == "Ctrl+T"));
     }
 
     #[test]

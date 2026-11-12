@@ -27,6 +27,12 @@ pub enum AppEvent {
     Lan(crate::web::LanEvent),
     /// The agent finished analysing the output (Ok analysis, or an error message).
     Agent(Result<crate::agent::Analysis, String>),
+    /// The side chat's AI answered request `req` (the model's raw text, or an
+    /// error message); an answer to an older request is dropped.
+    Chat {
+        req: u64,
+        result: Result<String, String>,
+    },
     /// A newer Winsploit release is available (its tag, e.g. "v0.3.0").
     Update(String),
 }
@@ -396,6 +402,7 @@ mod tests {
                 | AppEvent::Web(..)
                 | AppEvent::Lan(_)
                 | AppEvent::Agent(_)
+                | AppEvent::Chat { .. }
                 | AppEvent::Update(_) => {}
             }
         }
@@ -434,6 +441,7 @@ mod tests {
                 | AppEvent::Web(..)
                 | AppEvent::Lan(_)
                 | AppEvent::Agent(_)
+                | AppEvent::Chat { .. }
                 | AppEvent::Update(_) => {}
             }
         }

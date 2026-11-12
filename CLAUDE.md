@@ -90,6 +90,13 @@ manifest in `bucket/`, and `bucket_tests.rs` validates those manifests against t
   `commands`): show a tool's command line through `redact::command` (it applies the catalog's
   `secret_args:`), never a raw `args::join(&args)`. Typed input at a password prompt is masked in
   `Session::send`. Tool output is left verbatim unless the level is `all`, since it is evidence.
+- The AI never runs anything itself (agent.rs, chat.rs): it names a catalog tool and args, which
+  winsploit parses with `args::split` and runs through `App::launch`. The `claude` CLI is called
+  isolated (`agent::claude_args`: `--tools ""`, `--strict-mcp-config`, no hooks, scratch folder,
+  own system prompt) because the prompt carries untrusted tool output and the CLI would otherwise
+  inherit the user's permissions and hooks (a live test once let a Stop hook edit a file). Keep that
+  fail-closed. The side chat (`T`, `Chat` in app.rs) is terminal only, like Sandbox runs: no
+  `WebAction` may open it or send to it. `chat-autorun` stays off by default.
 - `scope.rs` is a pure matcher (#64) that nothing calls yet; keep it free of UI and I/O so the
   scope-enforcement work (#56, #66) can build on it. Its doc comment lists the decisions (apex vs
   wildcard, exclusions win, `Unknown` means "needs DNS").

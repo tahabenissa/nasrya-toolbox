@@ -185,6 +185,15 @@ session**, the way Claude Code works.
 - **`A`** picks the provider: the installed **Claude CLI** (reuses your login, no key), or
   **Gemini / DeepSeek / OpenAI** via their API, or a local **Ollama** model — each with an optional
   per-provider model override. Keys are read from the environment; nothing is sent until you press `a`.
+- **Side chat (`T`)**: open a panel next to the terminals and just say what you want — *"scan
+  10.0.0.5 for open ports"*. The AI already knows your catalog (and what is installed), your working
+  folder, the active challenge's target and the terminal in front, picks **one catalog tool** with its
+  args, and shows the plan. **`Enter` runs it** (or `Esc` skips it); the run goes through the normal
+  launcher, so it lands in a terminal beside the chat, and the chat tells you when it ends. Ask
+  *"what did it find?"* and it reads the output. `Esc` gives the keys back to the dashboard,
+  `Ctrl+T` hides the panel, `/clear` starts over. Terminal only: the web view can't reach it.
+  Set `chat-autorun: true` in `settings.yaml` to run plans without asking. That is opt-in because
+  tool output is text from the target and could try to steer the AI.
 
 ### Config-driven, honest by design
 - Every tool is a **YAML entry**, so you add one without touching code.
@@ -256,6 +265,7 @@ winsploit --version, -V   show version
 | `c` | Cancel the running process (kills the whole tree) |
 | `h` | Identify a hash (built in, offline) |
 | `a` · `A` | AI agent: read the output and suggest next steps · choose the provider / model |
+| `T` · `Ctrl+T` | Side chat: say what you want, the AI picks the tool and asks before running it · show / hide the panel |
 | `p` | Projects: create / open a working folder, with recents (reopened on startup) |
 | `d` | Working folder: where tools run, like `cd` · `Tab` completes · `..` `~` `-` work |
 | `C` | Challenges: create, switch, set the target / flag format, add files, open notes |
@@ -552,6 +562,13 @@ that:
   watchers get 403 on every action, only you can admit, remove or make keys, and the key and guest
   list are never sent to guests. Removing a guest or turning LAN mode off ends their session at
   once.
+- **The AI is the brain only.** Both the `a` agent and the `T` chat can only name a catalog tool and
+  its args; winsploit parses them into a real argv and runs them through the normal launcher.
+  The Claude CLI is called **isolated**: no tools, no MCP servers, no hooks, no slash commands, no
+  saved session, a custom system prompt and a scratch working folder. Otherwise it would inherit
+  your own Claude Code permissions while reading untrusted tool output, and a request that reaches
+  a too-old CLI is refused instead of falling back. What is sent to a provider has secrets masked
+  (`redact:`).
 - **Optional isolation for samples.** `S` runs debuggers and other reversing tools in Windows
   Sandbox with the sample read-only, one writable output folder and no network by default.
 
@@ -584,6 +601,7 @@ flowchart LR
 | `hashid.rs` | Built-in hash identifier |
 | `runner.rs` | Spawn, stream, stdin pipe, detach (gui/web), kill tree, output cleaning |
 | `runlog.rs` | Per-run log files |
+| `chat.rs` · `agent.rs` | The AI: the side chat's transcript, prompt and reply parsing, plus the providers (isolated Claude CLI, OpenAI-compatible HTTP) |
 | `redact.rs` | Secret redaction for the pane, logs and (later) reports: catalog `secret_args:`, token and password patterns, password prompts |
 | `scope.rs` | Pure scope matcher (target × scope → in / out / unknown): IPs, CIDRs, host wildcards, URL prefixes, IDN. Not wired in yet (#56) |
 | `app.rs` | State machine; every key and web request becomes an `Action` handled by `App::apply` |
@@ -661,6 +679,8 @@ node site/scripts/readme-banner.mjs   # regenerate .github/banner.svg (the READM
 - Tool-name column sized to the longest name.
 
 **AI agent, projects & sharing**
+- **Side chat (`T`)** turns plain language into a catalog-tool run (plan, then Enter), with the
+  catalog, target and terminal output as context; the Claude CLI is now called in an isolated mode.
 - **AI agent (`a`)** reads a terminal's output and suggests next steps as catalog-tool commands you
   confirm; **provider picker (`A`)** for the Claude CLI, Gemini, DeepSeek, OpenAI or a local Ollama
   model, with per-provider model overrides.
