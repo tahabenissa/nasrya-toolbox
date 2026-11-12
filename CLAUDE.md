@@ -30,6 +30,10 @@ test of `--version` and `list`. Pushing a `v*` tag runs `release.yml`.
 A running `winsploit.exe` locks `target\debug\winsploit.exe`, so `cargo build` fails with
 "failed to remove file" until that instance is closed.
 
+With the GNU toolchain (`stable-x86_64-pc-windows-gnu`), `build.rs` (windres) fails in a checkout whose
+path has a space (`cc1.exe: fatal error: ... out: No such file or directory`). Build into a
+space-free target dir instead: `$env:CARGO_TARGET_DIR = "C:\tmp\winsploit-target"`.
+
 ## Architecture
 
 **Single-threaded event loop with background workers.** `App::run` (app.rs) redraws, drains an
@@ -82,6 +86,13 @@ manifest in `bucket/`, and `bucket_tests.rs` validates those manifests against t
 - Executables resolve via PATH × PATHEXT, never the cwd. `.cmd`/`.bat` shims go through Rust's
   escaped cmd.exe path.
 - Each run and install writes a timestamped log (runlog.rs, under `%LOCALAPPDATA%\winsploit\logs`).
+- Secrets stay out of the pane's `$` line and the log (redact.rs, `redact:` setting, default
+  `commands`): show a tool's command line through `redact::command` (it applies the catalog's
+  `secret_args:`), never a raw `args::join(&args)`. Typed input at a password prompt is masked in
+  `Session::send`. Tool output is left verbatim unless the level is `all`, since it is evidence.
+- `scope.rs` is a pure matcher (#64) that nothing calls yet; keep it free of UI and I/O so the
+  scope-enforcement work (#56, #66) can build on it. Its doc comment lists the decisions (apex vs
+  wildcard, exclusions win, `Unknown` means "needs DNS").
 - The web view (web.rs) is off by default, binds 127.0.0.1 unless `--lan`, needs the per-session
   token/cookie, checks Host (IP literals only) and Origin + JSON on POSTs, and only accepts
   `WebAction`s. Never add an endpoint that runs a command line or serves arbitrary files.
@@ -111,6 +122,9 @@ app.js) is embedded with `include_str!`, so rebuild after editing it.
 - UI tests render into ratatui's `TestBackend` via the `draw(&app, w, h)` / `row(..)` / `screen(..)`
   helpers in `ui.rs` tests, and build `App` from the real `tools.yaml` (`include_str!`). Changes to
   visible strings or layout usually mean updating those assertions.
+- Property/fuzz tests (args, recipe, scope, redact) use the test-only `fuzz.rs`: a seeded `Rng`
+  plus a corpus of nasty strings, with no extra dependency. A failing case reproduces from its
+  seed and prints the offending input.
 - Fake sessions in tests keep `pid: None`, so `kill()` never runs `taskkill`.
 - Tests must not write the real `%APPDATA%`. `App::finish_tour` skips `settings.save()` under
   `cfg!(test)`; follow that pattern.

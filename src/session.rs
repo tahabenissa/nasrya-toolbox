@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::ChildStdin;
 use std::time::{Duration, Instant};
 
+use crate::redact::{self, Level};
 use crate::runlog::RunLog;
 use crate::runner;
 
@@ -64,6 +65,12 @@ pub struct Session {
     started_at: Option<Instant>,
     /// How long the last finished run took.
     pub last_duration: Option<Duration>,
+    /// What to keep out of the pane and the log (#70); set from the settings
+    /// when a tool starts.
+    pub redact: Level,
+    /// The last line the tool printed asked for a secret, so the next line
+    /// typed is masked.
+    awaiting_secret: bool,
 }
 
 impl Session {
@@ -87,6 +94,8 @@ impl Session {
             log_path: None,
             started_at: None,
             last_duration: None,
+            redact: Level::default(),
+            awaiting_secret: false,
         }
     }
 
@@ -122,12 +131,28 @@ impl Session {
         }
     }
 
-    /// A line from the process: logged, then shown.
+    /// A line from the process: logged, then shown. The log gets secret
+    /// patterns masked when `redact` is `all`; the pane shows the line as is.
     pub fn output_line(&mut self, line: String) {
+        self.awaiting_secret = redact::is_secret_prompt(&line);
         if let Some(log) = self.log.as_mut() {
-            log.line(&line);
+            if self.redact == Level::All {
+                log.line(&redact::text(&line));
+            } else {
+                log.line(&line);
+            }
         }
         self.push(line);
+    }
+
+    /// What the pane and the log show for a line the user typed: the line,
+    /// or `********` when the tool just asked for a password.
+    fn input_echo(&self, line: &str) -> String {
+        if self.awaiting_secret && self.redact != Level::Off {
+            format!("> {}", redact::MASK)
+        } else {
+            format!("> {line}")
+        }
     }
 
     /// Start this run's log file and say where it is. `source` records
@@ -194,7 +219,10 @@ impl Session {
             .and_then(|_| stdin.write_all(b"\n"))
             .and_then(|_| stdin.flush());
         match res {
-            Ok(()) => self.output_line(format!("> {line}")),
+            Ok(()) => {
+                let echo = self.input_echo(line);
+                self.output_line(echo);
+            }
             Err(e) => {
                 self.stdin = None;
                 self.push(format!("[err] couldn't send input: {e}"));
@@ -301,6 +329,61 @@ mod tests {
         assert_eq!(s.search_hit, Some(4)); // wraps to the newest
         s.find_next("open", false);
         assert_eq!(s.search_hit, Some(0)); // newer, wraps the other way
+    }
+
+    /// A session with a real log in a temp dir; returns it and the log text reader.
+    fn logged(level: Level, tag: &str) -> (Session, std::path::PathBuf, std::path::PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("winsploit-redact-{tag}-{}", std::process::id()));
+        let mut s = Session::new(1, "t", "");
+        s.redact = level;
+        s.open_log(&dir, "tool", "tool -x", "terminal");
+        let path = s.log_path.clone().unwrap();
+        (s, dir, path)
+    }
+
+    #[test]
+    fn what_is_typed_at_a_password_prompt_is_masked() {
+        let mut s = Session::new(1, "t", "");
+        assert_eq!(s.input_echo("hunter2"), "> hunter2"); // no prompt yet
+        s.output_line("Password:".into());
+        assert_eq!(s.input_echo("hunter2"), "> ********");
+        // any later line (the echo itself, or output) ends the prompt
+        s.output_line("> ********".into());
+        assert_eq!(s.input_echo("ls"), "> ls");
+        s.output_line("Enter passphrase for key:".into());
+        s.output_line("Permission denied".into());
+        assert_eq!(s.input_echo("x"), "> x");
+        // off means off
+        s.redact = Level::Off;
+        s.output_line("Password:".into());
+        assert_eq!(s.input_echo("hunter2"), "> hunter2");
+    }
+
+    #[test]
+    fn the_log_follows_the_redaction_level() {
+        let line = "Authorization: Bearer abcdefgh12345 and password=hunter2";
+        for (level, masked) in [
+            (Level::Off, false),
+            (Level::Commands, false),
+            (Level::All, true),
+        ] {
+            let (mut s, dir, path) = logged(level, &format!("{level:?}"));
+            s.output_line(line.into());
+            let masked_log = {
+                let text = std::fs::read_to_string(&path).unwrap();
+                let _ = std::fs::remove_dir_all(&dir);
+                text
+            };
+            assert_eq!(
+                !masked_log.contains("hunter2"),
+                masked,
+                "{level:?}: {masked_log}"
+            );
+            assert_eq!(!masked_log.contains("abcdefgh12345"), masked, "{level:?}");
+            // the pane always keeps the tool's output as printed
+            assert_eq!(s.output.last().map(String::as_str), Some(line));
+        }
     }
 
     #[test]

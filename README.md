@@ -530,6 +530,13 @@ that:
   command-string concatenation. Programs are resolved by PATH × PATHEXT (never the current
   directory), and `.cmd`/`.bat` shims go through Rust's escaped cmd.exe path.
 - **Audit trail.** Every run and install leaves a timestamped log.
+- **Secrets stay out of logs.** A tool's `secret_args:` in `tools.yaml` (`-p`, `--password`,
+  `"-H Authorization"`) are masked in the pane's `$` line and the run log, as are `user:pass@` URLs,
+  `Authorization` / `Cookie` headers, bearer tokens, `password=…` pairs, JWTs and well-known API
+  keys. What you type at a `Password:` prompt shows as `********`. The `redact:` setting in
+  `settings.yaml` picks how much: `off`, `commands` (the default: command lines and typed secrets;
+  tool output stays verbatim, because a cracked credential is a finding) or `all` (also masks
+  secret patterns in the log's tool output). A prompt is only noticed when the tool ends its line.
 - **The web view is locked down.** It's off by default and lives only as long as the terminal
   session. It listens on `127.0.0.1` unless you pass `--lan`. Each session has a random 128-bit
   link, traded for an `HttpOnly; SameSite=Strict` cookie. Requests must address the server by IP
@@ -577,6 +584,8 @@ flowchart LR
 | `hashid.rs` | Built-in hash identifier |
 | `runner.rs` | Spawn, stream, stdin pipe, detach (gui/web), kill tree, output cleaning |
 | `runlog.rs` | Per-run log files |
+| `redact.rs` | Secret redaction for the pane, logs and (later) reports: catalog `secret_args:`, token and password patterns, password prompts |
+| `scope.rs` | Pure scope matcher (target × scope → in / out / unknown): IPs, CIDRs, host wildcards, URL prefixes, IDN. Not wired in yet (#56) |
 | `app.rs` | State machine; every key and web request becomes an `Action` handled by `App::apply` |
 | `web.rs` · `web/` | Web view: local HTTP server, event stream, sign-in, LAN guests and join keys, and the embedded pages |
 | `tls.rs` | The LAN view's self-signed certificate: create / load / renew, SHA-256 fingerprint |

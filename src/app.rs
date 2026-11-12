@@ -1490,13 +1490,16 @@ impl App {
         let t = self.tools[tool].clone();
         self.next_id += 1;
         let mut s = Session::new(self.next_id, &t.name, &t.description);
+        s.redact = self.settings.redact;
         if let Some(by) = self.started_by(src) {
             s.push(format!(":: started {by}"));
         }
         if let Some(note) = &t.note {
             s.push(format!(":: note: {note}"));
         }
-        let shown = format!("{} {}", t.run_cmd, args::join(&args));
+        // secrets in the command line stay out of the pane (which the web
+        // view mirrors to LAN guests) and out of the run log (#70)
+        let shown = crate::redact::command(&t.run_cmd, &args, &t.secret_args, self.settings.redact);
         s.push(format!(":: in {}", crate::folder::short(&self.cwd)));
         s.push(format!("$ {shown}"));
         let mut cmd = runner::tool_command(&t.run_cmd, &args);
@@ -2748,8 +2751,13 @@ impl App {
                 self.status_line = format!("opened {name} in your browser");
             }
             Launch::Gui => {
-                self.console
-                    .push(format!("$ {} {}", tool.run_cmd, args::join(&args)));
+                let shown = crate::redact::command(
+                    &tool.run_cmd,
+                    &args,
+                    &tool.secret_args,
+                    self.settings.redact,
+                );
+                self.console.push(format!("$ {shown}"));
                 let mut cmd = runner::tool_command(&tool.run_cmd, &args);
                 cmd.current_dir(&self.cwd);
                 match runner::spawn_detached(cmd) {

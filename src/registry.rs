@@ -127,6 +127,11 @@ pub struct Tool {
     /// Flags and subcommands for the web view's command helper.
     #[serde(default)]
     pub options: Vec<Opt>,
+    /// Flags whose value is a secret, masked in the pane's `$` line and in
+    /// the run log (#70): `-p`, `--password`, or `"-H Authorization"` for a
+    /// header flag whose value starts with that header. See redact.rs.
+    #[serde(default)]
+    pub secret_args: Vec<String>,
 }
 
 /// `exe <args>` must print something containing `contains` (any case, on
@@ -233,6 +238,14 @@ impl Tool {
         }
         if !self.options.is_empty() && self.launch == Launch::Dataset {
             p.push("datasets don't run, so they can't have options".into());
+        }
+        p.extend(
+            self.secret_args
+                .iter()
+                .filter_map(|e| crate::redact::entry_problem(e)),
+        );
+        if !self.secret_args.is_empty() && self.launch == Launch::Dataset {
+            p.push("datasets don't run, so they can't have secret_args".into());
         }
         for d in &self.sandbox_deps {
             let ok = !d.is_empty()
@@ -629,6 +642,38 @@ mod tests {
                 "{needle} missing from:
 {msg}"
             );
+        }
+    }
+
+    #[test]
+    fn secret_args_parse_and_validate() {
+        let c = parse(
+            "tools:\n\
+             \x20 - {name: n, exe: n, scoop: n, run_cmd: n, secret_args: [-p, --password, '-H Authorization']}\n\
+             \x20 - {name: m, exe: m, scoop: m, run_cmd: m}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            c.tools[0].secret_args,
+            ["-p", "--password", "-H Authorization"]
+        );
+        assert!(c.tools[1].secret_args.is_empty());
+        let e = parse(
+            "tools:\n\
+             \x20 - {name: a, exe: a, scoop: a, run_cmd: a, secret_args: [password]}\n\
+             \x20 - {name: b, exe: b, scoop: b, run_cmd: b, secret_args: ['']}\n\
+             \x20 - {name: c, exe: c, scoop: c, run_cmd: c, secret_args: ['-H Authorization Bearer']}\n\
+             \x20 - {name: d, exe: d, scoop: d, launch: dataset, secret_args: [-p]}\n",
+        )
+        .unwrap_err();
+        let msg = format!("{e:#}");
+        for needle in [
+            "a: secret_args: \"password\" must start with a flag",
+            "b: secret_args: an entry is empty",
+            "c: secret_args: \"-H Authorization Bearer\" takes at most",
+            "d: datasets don't run, so they can't have secret_args",
+        ] {
+            assert!(msg.contains(needle), "{needle} missing from:\n{msg}");
         }
     }
 

@@ -43,6 +43,10 @@
 #               sample (debuggers).
 #   sandbox_deps (optional) Scoop packages mapped read-only into the sandbox and put on
 #               PATH, e.g. [temurin25-jdk] for Java tools
+#   secret_args (optional) flags whose value is a secret, masked in the pane's `$` line
+#               and in the run log: secret_args: [-p, --password, "-H Authorization"].
+#               `-H Authorization` masks only a header flag whose value starts with
+#               that header. Settings `redact:` (off | commands | all) sets how much.
 #
 # {scoop_app} in exe / run_cmd / url expands to the tool's Scoop app directory
 # (<scoop root>\apps\<scoop>\current). Use it for files Scoop doesn't put on
@@ -112,6 +116,7 @@ tools:
     exe: sqlmap
     scoop: sqlmap
     run_cmd: sqlmap
+    secret_args: ["--cookie", "--auth-cred", "-H Authorization", "--header Authorization"]
     args_hint: "--version"
     recipes:
       - { name: test the url, args: '-u {target} --batch' }
@@ -220,6 +225,7 @@ tools:
     exe: ffuf
     scoop: ffuf
     run_cmd: ffuf
+    secret_args: ["-H Authorization", "-H Cookie"]
     args_hint: '-u https://example.com/FUZZ -w "{app:seclists-lite}\common.txt"'
     bucket: security
     recipes:
@@ -279,6 +285,7 @@ tools:
     exe: feroxbuster
     scoop: feroxbuster
     run_cmd: feroxbuster
+    secret_args: ["-H Authorization", "-H Cookie"]
     args_hint: '-u https://example.com -w "{app:seclists-lite}\raft-medium-directories.txt"'
     recipes:
       - { name: dirs, args: '-u {target} -w {wordlist}' }
@@ -588,6 +595,7 @@ tools:
     install: pipx
     pipx: dirsearch
     run_cmd: dirsearch
+    secret_args: ["-H Authorization", "-H Cookie"]
     args_hint: '-u https://example.com -w "{app:seclists-lite}\common.txt"'
     note: needs Python 3.11+
     options:
@@ -613,6 +621,7 @@ tools:
     install: pipx
     pipx: wfuzz
     run_cmd: wfuzz
+    secret_args: ["-H Authorization", "-H Cookie"]
     args_hint: '-c -z "file,{app:seclists-lite}\common.txt" --hc 404 https://example.com/FUZZ'
     note: wfuzz depends on pycurl and was last released in 2020; if the install fails on a new Python, ffuf or feroxbuster cover the same ground
     options:
@@ -637,6 +646,7 @@ tools:
     install: pipx
     pipx: git+https://github.com/commixproject/commix
     run_cmd: commix
+    secret_args: ["--cookie", "--auth-cred", "-H Authorization"]
     args_hint: "--url=https://example.com/?addr=127.0.0.1 --batch"
     options:
       - { flag: '--url', arg: '<url>', help: 'target URL' }
@@ -670,6 +680,7 @@ tools:
     install: pipx
     pipx: git+https://github.com/Pennyw0rth/NetExec
     run_cmd: nxc
+    secret_args: ["-p", "--password", "-H", "--hash"]
     args_hint: "smb 192.168.1.0/24"
     note: needs Python 3.11+; SMB/LDAP/WinRM work on Windows, some other protocols are degraded
     options:
@@ -983,6 +994,7 @@ tools:
     scoop: steghide
     bucket: winsploit
     run_cmd: steghide
+    secret_args: ["-p", "--passphrase"]
     args_hint: "info image.jpg"
     note: legacy 2003 Win32 build - still the reference steghide; extract with -sf image.jpg -p <passphrase>
     recipes:

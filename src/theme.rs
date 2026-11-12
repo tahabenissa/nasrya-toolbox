@@ -118,6 +118,9 @@ pub struct Settings {
     pub update_check: bool,
     /// Ring the terminal bell when a long run finishes while unfocused (#113).
     pub notify_sound: bool,
+    /// How much of a run is kept out of the pane's `$` line and the run
+    /// log: `off`, `commands` (default) or `all` (#70, see redact.rs).
+    pub redact: crate::redact::Level,
 }
 
 impl Default for Settings {
@@ -134,6 +137,7 @@ impl Default for Settings {
             agent_models: std::collections::BTreeMap::new(),
             update_check: true,
             notify_sound: false,
+            redact: crate::redact::Level::default(),
         }
     }
 }

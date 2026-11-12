@@ -24,6 +24,7 @@ mod hashid;
 mod install;
 mod project;
 mod recipe;
+mod redact;
 mod registry;
 mod runlog;
 mod runner;
