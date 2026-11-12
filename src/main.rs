@@ -29,6 +29,7 @@ mod runlog;
 mod runner;
 mod sandbox;
 mod scoop;
+mod scope;
 mod session;
 mod setup;
 mod shortcut;
