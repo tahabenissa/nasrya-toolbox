@@ -13,8 +13,12 @@
 //!   Scoop's extensionless sh shims and `.ps1` shims don't produce a false
 //!   "installed".
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
 
 pub use crate::registry::Verify;
 
@@ -114,7 +118,7 @@ pub fn resolve(exe: &str) -> Option<PathBuf> {
 }
 
 /// What detection found for one tool.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Found {
     Missing,
     Installed(PathBuf),
@@ -124,20 +128,150 @@ pub enum Found {
     Conflict(PathBuf),
 }
 
+/// Cap on concurrent `verify` subprocesses, so a catalog with many verified
+/// tools doesn't spawn dozens of processes at once (#108).
+const MAX_VERIFY_PARALLEL: usize = 8;
+
 /// Probe a batch of tools with one PATH snapshot, running `verify` checks
 /// where the catalog asks for them.
 pub fn probe_all(tools: &[(String, Option<Verify>)]) -> Vec<Found> {
-    let idx = PathIndex::from_env();
-    tools
-        .iter()
-        .map(|(exe, verify)| match idx.resolve(exe) {
-            None => Found::Missing,
-            Some(path) => match verify {
-                Some(v) if !verify_matches(&path, v) => Found::Conflict(path),
-                _ => Found::Installed(path),
-            },
-        })
-        .collect()
+    probe_with(&PathIndex::from_env(), tools)
+}
+
+/// Same as `probe_all`, with an explicit PATH index (so tests can inject one).
+/// PATH resolution is in-memory and cheap, so it's done up front; only the
+/// `verify` checks spawn a subprocess, and those run concurrently (#108).
+fn probe_with(idx: &PathIndex, tools: &[(String, Option<Verify>)]) -> Vec<Found> {
+    let mut found: Vec<Found> = Vec::with_capacity(tools.len());
+    let mut jobs: Vec<(usize, PathBuf, Verify)> = Vec::new();
+    for (i, (exe, verify)) in tools.iter().enumerate() {
+        match idx.resolve(exe) {
+            None => found.push(Found::Missing),
+            Some(path) => {
+                if let Some(v) = verify {
+                    jobs.push((i, path.clone(), v.clone()));
+                }
+                found.push(Found::Installed(path));
+            }
+        }
+    }
+    // Downgrade Installed -> Conflict wherever the (parallel) verify check fails.
+    for (i, matched) in run_verifications(&jobs) {
+        if !matched {
+            if let Found::Installed(p) = &found[i] {
+                found[i] = Found::Conflict(p.clone());
+            }
+        }
+    }
+    found
+}
+
+/// Run the `verify` checks on a bounded thread pool. Returns `(tool index,
+/// matched)` for each job; order doesn't matter since results carry their index.
+fn run_verifications(jobs: &[(usize, PathBuf, Verify)]) -> Vec<(usize, bool)> {
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    let workers = jobs.len().min(MAX_VERIFY_PARALLEL);
+    let next = AtomicUsize::new(0);
+    let out: Mutex<Vec<(usize, bool)>> = Mutex::new(Vec::with_capacity(jobs.len()));
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let k = next.fetch_add(1, Ordering::Relaxed);
+                let Some((i, path, v)) = jobs.get(k) else {
+                    break;
+                };
+                let matched = verify_matches(path, v);
+                out.lock().unwrap().push((*i, matched));
+            });
+        }
+    });
+    out.into_inner().unwrap()
+}
+
+// ---- detection cache (#106): remember the last probe so the dashboard shows
+// install status instantly, then reconciles after the background probe. --------
+
+/// How long cached results are trusted before a cold probe is required.
+const CACHE_MAX_AGE_SECS: u64 = 14 * 24 * 60 * 60;
+
+#[derive(Default, Serialize, Deserialize)]
+struct DetectCache {
+    /// Fingerprint of PATH + PATHEXT; a change invalidates the whole cache.
+    path_fp: u64,
+    /// When it was written (unix seconds).
+    saved: u64,
+    /// exe name -> last result.
+    tools: BTreeMap<String, Found>,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn path_fingerprint() -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    std::env::var("PATH").unwrap_or_default().hash(&mut h);
+    std::env::var("PATHEXT").unwrap_or_default().hash(&mut h);
+    h.finish()
+}
+
+fn cache_file() -> Option<PathBuf> {
+    std::env::var_os("APPDATA")
+        .map(|a| PathBuf::from(a).join("winsploit").join("detect-cache.json"))
+}
+
+/// Pick cached results for `exes` out of `cache`, honouring the PATH
+/// fingerprint and age. Returns one entry per exe (`None` = not usable).
+fn select_from_cache(
+    cache: &DetectCache,
+    exes: &[String],
+    current_fp: u64,
+    now: u64,
+) -> Vec<Option<Found>> {
+    if cache.path_fp != current_fp || now.saturating_sub(cache.saved) > CACHE_MAX_AGE_SECS {
+        return vec![None; exes.len()];
+    }
+    exes.iter().map(|e| cache.tools.get(e).cloned()).collect()
+}
+
+/// Load the last probe's results for `exes`, if the cache matches the current
+/// PATH and is fresh enough. One entry per exe; `None` means "re-probe".
+pub fn load_cache(exes: &[String]) -> Vec<Option<Found>> {
+    let blank = || vec![None; exes.len()];
+    let Some(f) = cache_file() else {
+        return blank();
+    };
+    let Ok(text) = std::fs::read_to_string(&f) else {
+        return blank();
+    };
+    match serde_json::from_str::<DetectCache>(&text) {
+        Ok(cache) => select_from_cache(&cache, exes, path_fingerprint(), now_secs()),
+        Err(_) => blank(),
+    }
+}
+
+/// Write a fresh probe to the cache (best-effort; errors are ignored).
+pub fn save_cache(exes: &[String], found: &[Found]) {
+    let Some(f) = cache_file() else {
+        return;
+    };
+    let cache = DetectCache {
+        path_fp: path_fingerprint(),
+        saved: now_secs(),
+        tools: exes.iter().cloned().zip(found.iter().cloned()).collect(),
+    };
+    if let Some(dir) = f.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(json) = serde_json::to_string(&cache) {
+        let _ = std::fs::write(&f, json);
+    }
 }
 
 /// Run `path <verify.args>` (3 s timeout) and check that its combined
@@ -304,5 +438,46 @@ mod tests {
     fn unreadable_dirs_are_skipped() {
         let i = idx(r"C:\gone;C:\a", PATHEXT, &[(r"C:\a", &["t.exe"])]);
         assert_eq!(i.resolve("t"), Some(PathBuf::from(r"C:\a\t.exe")));
+    }
+
+    #[test]
+    fn probe_resolves_installed_and_missing() {
+        let i = idx(r"C:\a", PATHEXT, &[(r"C:\a", &["nmap.exe"])]);
+        let tools = [("nmap".to_string(), None), ("ghost".to_string(), None)];
+        let found = probe_with(&i, &tools);
+        assert_eq!(found[0], Found::Installed(PathBuf::from(r"C:\a\nmap.exe")));
+        assert_eq!(found[1], Found::Missing);
+    }
+
+    #[test]
+    fn cache_selects_only_when_fingerprint_and_age_match() {
+        let mut tools = BTreeMap::new();
+        tools.insert("nmap".into(), Found::Installed(PathBuf::from(r"C:\a\nmap.exe")));
+        tools.insert("sqlmap".into(), Found::Missing);
+        let cache = DetectCache { path_fp: 42, saved: 1_000, tools };
+        let exes = vec!["nmap".to_string(), "sqlmap".to_string(), "new".to_string()];
+
+        // matching fingerprint, fresh: known tools come back, unknown is None
+        let got = select_from_cache(&cache, &exes, 42, 1_500);
+        assert_eq!(got[0], Some(Found::Installed(PathBuf::from(r"C:\a\nmap.exe"))));
+        assert_eq!(got[1], Some(Found::Missing));
+        assert_eq!(got[2], None);
+
+        // PATH changed -> whole cache ignored
+        assert!(select_from_cache(&cache, &exes, 99, 1_500).iter().all(Option::is_none));
+        // too old -> ignored
+        let stale = 1_000 + CACHE_MAX_AGE_SECS + 1;
+        assert!(select_from_cache(&cache, &exes, 42, stale).iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn cache_round_trips_through_json() {
+        let mut tools = BTreeMap::new();
+        tools.insert("x".into(), Found::Conflict(PathBuf::from(r"C:\b\x.exe")));
+        let cache = DetectCache { path_fp: 7, saved: 123, tools };
+        let json = serde_json::to_string(&cache).unwrap();
+        let back: DetectCache = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.path_fp, 7);
+        assert_eq!(back.tools.get("x"), Some(&Found::Conflict(PathBuf::from(r"C:\b\x.exe"))));
     }
 }

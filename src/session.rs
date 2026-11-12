@@ -8,6 +8,7 @@ use std::cell::Cell;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ChildStdin;
+use std::time::{Duration, Instant};
 
 use crate::runlog::RunLog;
 use crate::runner;
@@ -59,6 +60,10 @@ pub struct Session {
     /// The run log of the last run here (kept after it's closed, so the web
     /// view can offer it for download).
     pub log_path: Option<PathBuf>,
+    /// When the current run started (for the finish notification, #113).
+    started_at: Option<Instant>,
+    /// How long the last finished run took.
+    pub last_duration: Option<Duration>,
 }
 
 impl Session {
@@ -80,6 +85,8 @@ impl Session {
             ended: 0,
             seq: 0,
             log_path: None,
+            started_at: None,
+            last_duration: None,
         }
     }
 
@@ -143,12 +150,14 @@ impl Session {
         self.stdin = stdin;
         self.state = RunState::Running;
         self.kill_requested = false;
+        self.started_at = Some(Instant::now());
     }
 
     /// The process finished; `seq` orders finished terminals by age.
     pub fn exited(&mut self, code: Option<i32>, seq: u64) {
         self.pid = None;
         self.stdin = None;
+        self.last_duration = self.started_at.take().map(|t| t.elapsed());
         if let Some(log) = self.log.take() {
             log.finish(code);
         }

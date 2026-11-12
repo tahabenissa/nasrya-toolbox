@@ -272,6 +272,29 @@ pub enum Hit {
 /// Two clicks on the same cell this close together are a double-click.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
+/// A run at or past this is "long": worth a sound when it finishes unfocused (#113).
+const LONG_RUN: Duration = Duration::from_secs(30);
+
+/// Human-friendly run time: `45s`, `4m12s`, `1h03m`.
+fn fmt_duration(d: Duration) -> String {
+    let s = d.as_secs();
+    if s < 60 {
+        format!("{s}s")
+    } else if s < 3600 {
+        format!("{}m{:02}s", s / 60, s % 60)
+    } else {
+        format!("{}h{:02}m", s / 3600, (s % 3600) / 60)
+    }
+}
+
+/// Ring the terminal bell (BEL) — a cheap, dependency-free notification.
+fn ring_bell() {
+    use std::io::Write;
+    let mut out = std::io::stdout();
+    let _ = out.write_all(b"\x07");
+    let _ = out.flush();
+}
+
 /// State of the `t` appearance overlay.
 pub struct Appearance {
     /// highlighted row, an index into `theme::Field::ALL`
@@ -637,6 +660,20 @@ impl App {
         if let Some(last) = app.pstore.last.clone().filter(|p| p.is_dir()) {
             app.cwd = last.clone();
             app.project = Some(crate::project::Project::open(last));
+        }
+        // show the last probe's install status immediately; the background
+        // detection pass (started by `run`) then reconciles it (#106)
+        let exes: Vec<String> = app.tools.iter().map(|t| t.exe.clone()).collect();
+        for (i, cached) in detect::load_cache(&exes).into_iter().enumerate() {
+            match cached {
+                Some(detect::Found::Installed(_)) => app.status[i] = ToolStatus::Installed,
+                Some(detect::Found::Missing) => app.status[i] = ToolStatus::Missing,
+                Some(detect::Found::Conflict(p)) => {
+                    app.status[i] = ToolStatus::Conflict;
+                    app.conflicts[i] = Some(p);
+                }
+                None => {}
+            }
         }
         app
     }
@@ -1603,6 +1640,9 @@ impl App {
             self.detect_all(true);
             return;
         }
+        // remember this probe so the next launch can show status instantly (#106)
+        let exes: Vec<String> = self.tools.iter().map(|t| t.exe.clone()).collect();
+        detect::save_cache(&exes, &found);
         self.conflicts = vec![None; found.len()];
         self.status = found
             .into_iter()
@@ -1648,18 +1688,24 @@ impl App {
                     let seen = self.on_screen(pos);
                     let focused = pos == self.focus;
                     let mut note = None;
+                    let mut dur = None;
                     if let Some(s) = self.session_mut(pos) {
                         s.exited(code, seq);
                         s.unread |= !seen;
                         let title = s.title.clone();
+                        dur = s.last_duration;
+                        // "finished in 4m12s" so a long scan announces how long it took (#113)
+                        let took = dur
+                            .map(|d| format!(" in {}", fmt_duration(d)))
+                            .unwrap_or_default();
                         if pos > 0 {
                             note = Some(if !s.failed() {
                                 (
                                     ToastKind::Ok,
-                                    format!("✓ {title} finished in terminal {pos}"),
+                                    format!("✓ {title} finished{took} · terminal {pos}"),
                                 )
                             } else if let RunState::Exited(Some(c)) = s.state {
-                                (ToastKind::Err, format!("✗ {title} exited {c}"))
+                                (ToastKind::Err, format!("✗ {title} exited {c}{took}"))
                             } else {
                                 (ToastKind::Err, format!("✗ {title} stopped"))
                             });
@@ -1676,6 +1722,12 @@ impl App {
                     }
                     if let Some((kind, text)) = note {
                         self.toast(kind, text);
+                    }
+                    // a long run that finished while you were elsewhere: ring the
+                    // terminal bell, if the user opted into sound (#113)
+                    let long = dur.is_some_and(|d| d >= LONG_RUN);
+                    if pos > 0 && long && !focused && self.settings.notify_sound {
+                        ring_bell();
                     }
                     if focused && self.mode == Mode::StdinInput {
                         self.mode = Mode::Browsing;

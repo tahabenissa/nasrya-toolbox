@@ -116,6 +116,8 @@ pub struct Settings {
     pub agent_models: std::collections::BTreeMap<String, String>,
     /// Check GitHub once a day for a newer release (toast only, never downloads).
     pub update_check: bool,
+    /// Ring the terminal bell when a long run finishes while unfocused (#113).
+    pub notify_sound: bool,
 }
 
 impl Default for Settings {
@@ -131,6 +133,7 @@ impl Default for Settings {
             agent: crate::agent::Provider::default(),
             agent_models: std::collections::BTreeMap::new(),
             update_check: true,
+            notify_sound: false,
         }
     }
 }
