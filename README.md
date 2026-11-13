@@ -25,7 +25,7 @@ No WSL. No VM. No guesswork about what actually works on Windows.
 ![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 ![rust](https://img.shields.io/badge/rust-1.87%2B-B7410E)
 ![tools](https://img.shields.io/badge/catalog-45%20tools-8A2BE2)
-![tests](https://img.shields.io/badge/tests-213%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-290%20passing-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [Quick start](#quick-start) •
